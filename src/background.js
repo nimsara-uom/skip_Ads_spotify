@@ -32,20 +32,28 @@ const LOG = '[AdVanish BG]';
 //   - Updated to a new version  (reason: 'update')
 //   - Chrome itself is updated  (reason: 'chrome_update')
 //
-// We use this to set up default values in storage.
+// We use this to set up default values in storage AND to open
+// the onboarding page for new users.
 chrome.runtime.onInstalled.addListener((details) => {
   console.log(LOG, 'onInstalled:', details.reason);
 
   if (details.reason === 'install') {
     // Set default settings on fresh install
     chrome.storage.local.set({
-      enabled:     true,
-      mode:        'auto',       // 'auto' | 'mute' | 'speed'
-      statsToday:  0,
-      statsTotal:  0,
-      lastDate:    todayStr(),   // Used to reset daily counter
+      enabled:    true,
+      mode:       'auto',
+      statsToday: 0,
+      statsTotal: 0,
+      lastDate:   todayStr(),
     });
     console.log(LOG, 'Default settings initialized');
+
+    // LESSON: chrome.tabs.create() — open a new tab from the service worker
+    // chrome.extension.getURL() (old) is now chrome.runtime.getURL() in MV3.
+    // It converts a relative extension path to a full chrome-extension:// URL.
+    const onboardUrl = chrome.runtime.getURL('src/onboard/onboard.html');
+    chrome.tabs.create({ url: onboardUrl });
+    console.log(LOG, 'Onboarding tab opened:', onboardUrl);
   }
 });
 
