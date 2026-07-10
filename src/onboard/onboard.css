@@ -1,0 +1,101 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  --green:   #1DB954;
+  --dark:    #0d0d0d;
+  --surface: #1a1a1a;
+  --border:  #2a2a2a;
+  --text:    #ffffff;
+  --muted:   #a7a7a7;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Inter', sans-serif;
+  background: var(--dark);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  max-width: 520px;
+  width: 100%;
+  padding: 40px;
+}
+
+.hero {
+  text-align: center;
+  margin-bottom: 36px;
+}
+
+.logo {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  margin-bottom: 16px;
+}
+
+h1 {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.tagline {
+  color: var(--muted);
+  font-size: 15px;
+}
+
+/* Steps */
+.steps { display: flex; flex-direction: column; gap: 16px; margin-bottom: 28px; }
+
+.step {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  background: #222;
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+
+.step-icon { font-size: 20px; flex-shrink: 0; margin-top: 2px; }
+
+.step strong { display: block; font-size: 14px; margin-bottom: 4px; }
+.step p { font-size: 13px; color: var(--muted); line-height: 1.5; }
+.step a { color: var(--green); text-decoration: none; }
+.step a:hover { text-decoration: underline; }
+
+/* Notice */
+.notice {
+  background: rgba(255, 200, 0, 0.08);
+  border: 1px solid rgba(255, 200, 0, 0.2);
+  border-radius: 10px;
+  padding: 14px 16px;
+  font-size: 13px;
+  color: #e8d48a;
+  line-height: 1.6;
+  margin-bottom: 24px;
+}
+
+/* CTA */
+.cta {
+  display: block;
+  background: var(--green);
+  color: #000;
+  font-weight: 600;
+  font-size: 15px;
+  text-align: center;
+  padding: 14px;
+  border-radius: 100px;
+  text-decoration: none;
+  transition: opacity 0.2s;
+}
+.cta:hover { opacity: 0.85; }
