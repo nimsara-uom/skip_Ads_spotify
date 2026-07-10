@@ -3,13 +3,53 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!--
+    LESSON: Extension CSP
+    Chrome MV3 forbids inline scripts in extension pages for security.
+    <script>alert('hi')</script>  ← NOT ALLOWED
+    You must always use an external .js file via src="".
+  -->
   <title>AdVanish for Spotify</title>
   <link rel="stylesheet" href="popup.css" />
 </head>
 <body>
-  <!-- Popup stub — we'll build this out in Phase 5 -->
-  <h1>AdVanish 🎵</h1>
-  <p>Loading...</p>
+  <div class="header">
+    <img src="../../icons/icon48.png" alt="AdVanish icon" class="logo" />
+    <div>
+      <h1 class="title">AdVanish</h1>
+      <p class="subtitle">Spotify Ad Handler</p>
+    </div>
+  </div>
+
+  <div class="status-section">
+    <div class="status-row">
+      <span class="label">Status</span>
+      <!-- We'll wire this toggle in Commit 19 -->
+      <label class="toggle" id="toggle-label">
+        <input type="checkbox" id="enabled-toggle" checked />
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <div class="stats-section">
+    <p class="stats-label">Ads handled today</p>
+    <p class="stats-count" id="stats-count">—</p>
+  </div>
+
+  <div class="mode-section">
+    <p class="label">Mode</p>
+    <select id="mode-select">
+      <option value="auto">⚡ Auto (skip → speed → mute)</option>
+      <option value="mute">🔇 Mute only</option>
+      <option value="speed">⏩ Speed only</option>
+    </select>
+  </div>
+
+  <!--
+    LESSON: No inline JS allowed — must use external file
+    The script loads AFTER the HTML so it can find DOM elements.
+  -->
   <script src="popup.js"></script>
 </body>
 </html>
