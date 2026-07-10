@@ -88,29 +88,43 @@ const ReactionModule = {
   _activeAction: null, // 'skip' | 'speed' | 'mute' | null
 
   /**
-   * react() — Main entry point. Try each action in order.
+   * react() — Main entry point.
+   *
+   * LESSON: Respecting user preferences via state.mode
+   *   'auto'  → full chain: skip → speed → mute (best to worst)
+   *   'speed' → skip straight to speed-up (skip first if possible)
+   *   'mute'  → skip straight to mute (most conservative)
+   *
+   *   Notice state is referenced here even though it's declared
+   *   later in the file. This works because react() is called
+   *   at runtime (not at parse time), so state is already defined
+   *   by then. This is called "temporal dead zone" safety — as long
+   *   as the const is declared before the function is CALLED (not
+   *   just defined), you're fine.
    */
   react() {
-    log('Reaction chain starting...');
-
-    // Step 1: Can we skip?
-    if (this.tryClickSkip()) {
-      this._activeAction = 'skip';
-      return;
-    }
-
-    // Step 2: Can we speed up?
+    log(`Reaction chain starting (mode: ${state.mode})...`);
     const audio = DetectionModule.getAudioElement();
-    if (audio && this.trySpeedUp(audio)) {
-      this._activeAction = 'speed';
+
+    // In 'mute' mode — skip the fancy stuff, just silence it
+    if (state.mode === 'mute') {
+      if (audio && this.fallbackMute(audio)) {
+        this._activeAction = 'mute';
+      }
       return;
     }
 
-    // Step 3: Last resort — mute
-    if (audio && this.fallbackMute(audio)) {
-      this._activeAction = 'mute';
+    // In 'speed' mode — skip if possible, then speed, skip mute-only fallback
+    if (state.mode === 'speed') {
+      if (this.tryClickSkip()) { this._activeAction = 'skip'; return; }
+      if (audio && this.trySpeedUp(audio)) { this._activeAction = 'speed'; return; }
       return;
     }
+
+    // 'auto' mode — full fallback chain
+    if (this.tryClickSkip()) { this._activeAction = 'skip'; return; }
+    if (audio && this.trySpeedUp(audio)) { this._activeAction = 'speed'; return; }
+    if (audio && this.fallbackMute(audio)) { this._activeAction = 'mute'; return; }
 
     warn('All reaction strategies failed.');
   },
