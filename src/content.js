@@ -530,9 +530,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function init() {
   log('Initializing AdVanish v0.1...');
 
-  // LESSON: Read settings from storage on startup
-  // chrome.storage.local.get() is async — we use a Promise wrapper
-  // or pass a callback. Here we wrap it for async/await cleanliness.
   const stored = await chrome.storage.local.get(['enabled', 'mode']);
   if (stored.enabled !== undefined) state.enabled = stored.enabled;
   if (stored.mode    !== undefined) state.mode    = stored.mode;
@@ -540,9 +537,70 @@ async function init() {
 
   startObserver();
   startPolling();
-  onDomChange(); // Check immediately on load
+  onDomChange();
+  handleSpaNavigation(); // ← NEW: Commit 24
   log('✅ Ready. Watching for ads...');
 }
 
+
+// ============================================================
+// Commit 24: SPA Navigation Handler
+// ============================================================
+// LESSON: The Single-Page App (SPA) problem
+//
+// Spotify is a React app. When you click "Home" → "Artist" →
+// "Album", the URL changes (via history.pushState) but the
+// PAGE NEVER RELOADS. Chrome injected our content script ONCE
+// when the tab first loaded. It keeps running across all these
+// "navigations".
+//
+// The problem: when Spotify navigates, the player bar DOM is
+// re-rendered. Our MutationObserver handles this fine since it
+// watches document.body broadly. But adIsPlaying state could
+// get stuck in the wrong state if the ad ends mid-navigation.
+//
+// Solution: Listen for navigation events and reset state.
+//
+// HOW history.pushState PATCHING WORKS:
+//   The browser doesn't fire a useful event for pushState calls.
+//   We monkey-patch (wrap) the native function to intercept calls:
+//     const original = history.pushState;
+//     history.pushState = function(...args) {
+//       original.apply(this, args);  // Call the real pushState
+//       ourCallback();               // Then do our thing
+//     }
+// This is a common SPA content script technique.
+
+function handleSpaNavigation() {
+  // Patch history.pushState
+  const originalPushState = history.pushState.bind(history);
+  history.pushState = function (...args) {
+    originalPushState(...args);
+    onNavigate();
+  };
+
+  // Also handle back/forward button (popstate event)
+  window.addEventListener('popstate', onNavigate);
+
+  log('SPA navigation handler registered');
+}
+
+function onNavigate() {
+  log('SPA navigation detected → URL:', window.location.pathname);
+
+  // If an ad was "playing" but we navigated away, reset state.
+  // The new page might not have an ad. Let the observer re-detect.
+  if (adIsPlaying) {
+    log('Navigation mid-ad: reverting and resetting state');
+    ReactionModule.revert();
+    adIsPlaying = false;
+  }
+
+  // Re-check the new page after a short delay (DOM needs to update)
+  setTimeout(onDomChange, 500);
+}
+
+
 init();
+
 
