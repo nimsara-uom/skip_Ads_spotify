@@ -1,8 +1,8 @@
 # LEARNING.md — AdVanish for Spotify: The Complete Learning Guide
 
 > **Who this is for:** Someone with basic JavaScript knowledge who wants to understand how Chrome extensions work by reading through a real project — commit by commit, concept by concept.
->This is Fully AI genarated(Its saying by human, yeah me, Nimsara), I built this cause I want people to understand the code, not just fork and vibe code netire thing
-> **How long it takes:** ~3–5 hours to read everything carefully. ~8–10 hours to re-build it yourself.
+> **This is Fully AI genarated(Its saying by human, yeah me, Nimsara), I built this cause I want people to understand the code, not just fork and vibe code netire thing
+> **How long it takes:** ~3–5 hours to read everything carefully. ~8–10 hours to re-build it yourself..
 
 ---
 
