@@ -2,6 +2,8 @@
 
 > A Chrome extension (Manifest V3) that detects Spotify Web Player ads and handles them via a **skip → speed-up → mute** fallback chain. Built as a learning project with 25+ intentional, educational commits.
 
+> 📖 **New here? Start with [LEARNING.md](./LEARNING.md)** — it explains every concept, the correct order to read the source files, how to follow the git history, and how to rebuild this from scratch.
+
 ![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-4285F4?logo=googlechrome&logoColor=white)
 ![Manifest V3](https://img.shields.io/badge/Manifest-V3-green)
 ![Vanilla JS](https://img.shields.io/badge/Vanilla-JS-F7DF1E?logo=javascript&logoColor=black)
@@ -160,4 +162,3 @@ findings.md                ← DOM recon documentation
 
 ---
 
-*Built for [Contest Name] · Educational project · Not for commercial use*
