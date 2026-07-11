@@ -10,8 +10,9 @@
 // ── Configuration ────────────────────────────────────────────
 const CONFIG = {
   POLL_INTERVAL_MS:  800,
-  SPEED_RATE:        16,    // How fast to play ads (16x ≈ ~1.5s per 30s ad)
-  REACTION_DELAY_MS: 300,   // Small delay before reacting (lets DOM settle)
+  SPEED_RATE:        16,
+  REACTION_DELAY_MS: 500,   // Delay before reacting (lets DOM settle)
+  RELOAD_COOLDOWN:   5000,  // Min ms between reloads (prevents infinite loop)
   LOG_PREFIX:        '[Stupefy!]',
 };
 
@@ -137,29 +138,39 @@ const ReactionModule = {
    *   as the const is declared before the function is CALLED (not
    *   just defined), you're fine.
    */
+  /**
+   * LESSON: The Reload Trick (the real exploit)
+   *
+   * After extensive testing, we confirmed:
+   *   - Spotify's Web Player has NO accessible <audio> or <video> element
+   *   - They use Encrypted Media Extensions (EME) + Web Audio API
+   *   - playbackRate is not controllable from content scripts
+   *
+   * BUT: Spotify's servers don't save "mid-ad" state to your session.
+   * If you reload the page during an ad, Spotify forgets the ad was
+   * playing and loads the next actual song in your queue.
+   *
+   * This is the primary strategy now:
+   *   1. Mute via UI (so you don't hear the ad during the ~2s reload)
+   *   2. Reload the page
+   *   3. On reload, content script re-injects, detects no ad, music plays
+   *
+   * Fallback chain:
+   *   tryClickSkip() → tryReloadSkip() → tryMuteViaUI()
+   */
   react() {
     log(`Reaction chain starting (mode: ${state.mode})...`);
-    const media = DetectionModule.getAudioElement();
     let succeeded = false;
 
-    // In 'mute' mode — skip the fancy stuff, just silence it
     if (state.mode === 'mute') {
-      if (media && this.fallbackMute(media))  { this._activeAction = 'mute';   succeeded = true; }
-      else if (this.tryMuteViaUI())           { this._activeAction = 'uimute'; succeeded = true; }
+      // Mute-only mode: just silence the ad, no reload
+      if (this.tryMuteViaUI())  { this._activeAction = 'uimute'; succeeded = true; }
     }
-    // In 'speed' mode — skip if possible, then speed
-    else if (state.mode === 'speed') {
-      if (this.tryClickSkip())                     { this._activeAction = 'skip';  succeeded = true; }
-      else if (media && this.trySpeedUp(media))     { this._activeAction = 'speed'; succeeded = true; }
-      else if (media && this.fallbackMute(media))   { this._activeAction = 'mute';  succeeded = true; }
-      else if (this.tryMuteViaUI())                 { this._activeAction = 'uimute'; succeeded = true; }
-    }
-    // 'auto' mode — full fallback chain (skip → speed → mute → UI mute)
     else {
-      if      (this.tryClickSkip())                     { this._activeAction = 'skip';   succeeded = true; }
-      else if (media && this.trySpeedUp(media))         { this._activeAction = 'speed';  succeeded = true; }
-      else if (media && this.fallbackMute(media))       { this._activeAction = 'mute';   succeeded = true; }
-      else if (this.tryMuteViaUI())                     { this._activeAction = 'uimute'; succeeded = true; }
+      // Auto or Speed mode: try to actually skip the ad
+      if      (this.tryClickSkip())    { this._activeAction = 'skip';   succeeded = true; }
+      else if (this.tryReloadSkip())   { this._activeAction = 'reload'; succeeded = true; }
+      else if (this.tryMuteViaUI())    { this._activeAction = 'uimute'; succeeded = true; }
     }
 
     if (succeeded) {
@@ -167,7 +178,6 @@ const ReactionModule = {
       log(`✅ Reaction succeeded: ${this._activeAction}`);
     } else {
       warn('All reaction strategies failed — ad playing normally.');
-      warn('Media element found?', !!media);
     }
   },
 
@@ -213,6 +223,65 @@ const ReactionModule = {
 
     skipBtn.click();
     log('✅ tryClickSkip: clicked skip button');
+    return true;
+  },
+
+  /**
+   * tryReloadSkip() — THE RELOAD TRICK
+   *
+   * LESSON: Exploiting server-side state gaps
+   *   Spotify's CDN streams ad audio directly to the browser.
+   *   The ad playback state is LOCAL — the Spotify backend only
+   *   tracks "this user should see an ad soon" but NOT
+   *   "this user is currently mid-ad at 12 seconds in".
+   *
+   *   When we reload the page:
+   *   1. The browser kills all audio streams
+   *   2. Spotify's web app boots fresh
+   *   3. Backend says "ad was served" (or sometimes serves another)
+   *   4. Your music queue resumes from where it was
+   *
+   *   We mute FIRST so the user hears nothing during the ~2s reload.
+   *   A cooldown prevents infinite reload loops if an ad appears
+   *   immediately after reload.
+   */
+  _lastReloadTime: 0,
+
+  tryReloadSkip() {
+    const now = Date.now();
+    const timeSinceLastReload = now - this._lastReloadTime;
+
+    // Cooldown check: don't reload again within 5 seconds
+    // This prevents infinite loops: ad → reload → ad → reload → ...
+    if (timeSinceLastReload < CONFIG.RELOAD_COOLDOWN) {
+      log(`tryReloadSkip: cooldown active (${timeSinceLastReload}ms since last reload, need ${CONFIG.RELOAD_COOLDOWN}ms)`);
+      return false;
+    }
+
+    log('tryReloadSkip: muting first, then reloading page...');
+
+    // Step 1: Mute via UI so user doesn't hear the ad blast during reload
+    this.tryMuteViaUI();
+
+    // Step 2: Save the reload timestamp so we can enforce cooldown
+    this._lastReloadTime = now;
+
+    // Step 3: Store that we're doing a reload-skip (so init() knows on restart)
+    try {
+      chrome.storage.local.set({ _reloadSkipTime: now });
+    } catch (e) {
+      // Extension context might be invalidated — that's fine, we're reloading
+    }
+
+    // Step 4: Show toast briefly before reload
+    UIOverlay.showToast('⚡ Skipping ad via reload...');
+
+    // Step 5: Reload after a tiny delay (lets the mute + toast register)
+    setTimeout(() => {
+      log('🔄 Reloading page NOW');
+      location.reload();
+    }, 200);
+
     return true;
   },
 
@@ -413,16 +482,21 @@ const ReactionModule = {
 
 const StatsTracker = {
   increment() {
-    // Tell background.js an ad was handled — it updates storage + badge
-    chrome.runtime.sendMessage({ type: 'AD_HANDLED' }, (response) => {
-      if (chrome.runtime.lastError) {
-        // This error fires if the background worker is asleep and not yet awake.
-        // It's harmless — Chrome will have already woken it up.
-        warn('sendMessage AD_HANDLED error (usually harmless):', chrome.runtime.lastError.message);
-        return;
-      }
-      log('StatsTracker: AD_HANDLED acknowledged by background');
-    });
+    // BUG FIX: Wrap in try-catch to handle "Extension context invalidated"
+    // This error occurs when the extension is reloaded/updated while
+    // the content script is still running in an old tab. The old content
+    // script's chrome.runtime reference becomes stale.
+    try {
+      chrome.runtime.sendMessage({ type: 'AD_HANDLED' }, (response) => {
+        if (chrome.runtime.lastError) {
+          warn('sendMessage AD_HANDLED error (harmless):', chrome.runtime.lastError.message);
+          return;
+        }
+        log('StatsTracker: AD_HANDLED acknowledged by background');
+      });
+    } catch (err) {
+      warn('StatsTracker: extension context invalidated, skipping:', err.message);
+    }
   },
 };
 
@@ -557,14 +631,11 @@ let adStartTime = null; // Track when ad started (for toast timing)
 
 function onAdStart() {
   adStartTime = Date.now();
-  // BUG FIX: Don't count the stat here — count it only AFTER a
-  // reaction actually succeeds (inside ReactionModule.react()).
-  // Counting here meant every detected ad inflated the number,
-  // even if all strategies failed and the ad played in full.
 
   UIOverlay.showToast('⚡ Ad detected — handling...');
 
-  // React after a small delay to let the DOM settle
+  // React after a short delay to let the DOM finish rendering
+  // (Spotify's React takes a moment to update button states)
   setTimeout(() => {
     ReactionModule.react();
   }, CONFIG.REACTION_DELAY_MS);
@@ -679,15 +750,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function init() {
   log('Initializing Stupefy! v0.1...');
 
-  const stored = await chrome.storage.local.get(['enabled', 'mode']);
-  if (stored.enabled !== undefined) state.enabled = stored.enabled;
-  if (stored.mode    !== undefined) state.mode    = stored.mode;
-  log('Settings loaded:', state);
+  try {
+    const stored = await chrome.storage.local.get(['enabled', 'mode', '_reloadSkipTime']);
+    if (stored.enabled !== undefined) state.enabled = stored.enabled;
+    if (stored.mode    !== undefined) state.mode    = stored.mode;
+
+    // If we just did a reload-skip, transfer the timestamp to the
+    // ReactionModule so the cooldown is respected across page reloads.
+    // Without this, a reload would reset _lastReloadTime to 0 and
+    // potentially cause an infinite loop.
+    if (stored._reloadSkipTime) {
+      const elapsed = Date.now() - stored._reloadSkipTime;
+      if (elapsed < CONFIG.RELOAD_COOLDOWN) {
+        ReactionModule._lastReloadTime = stored._reloadSkipTime;
+        log(`Post-reload cooldown active (${elapsed}ms ago)`);
+      }
+      // Clean up the flag
+      chrome.storage.local.remove('_reloadSkipTime');
+    }
+
+    log('Settings loaded:', state);
+  } catch (err) {
+    warn('init: could not read storage (extension context may be stale):', err.message);
+  }
 
   startObserver();
   startPolling();
   onDomChange();
-  handleSpaNavigation(); // ← NEW: Commit 24
+  handleSpaNavigation();
   log('✅ Ready. Watching for ads...');
 }
 
