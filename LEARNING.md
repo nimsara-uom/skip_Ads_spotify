@@ -1,4 +1,4 @@
-# LEARNING.md — AdVanish for Spotify: The Complete Learning Guide
+# LEARNING.md — Stupefy!: The Complete Learning Guide
 
 > **Who this is for:** Someone with basic JavaScript knowledge who wants to understand how Chrome extensions work by reading through a real project — commit by commit, concept by concept.
 >
@@ -251,11 +251,11 @@ This isolation is a **security feature** — it prevents malicious pages from st
 #### Lesson 4.2 — Centralizing Logs
 ```js
 const DEBUG = true;
-const log  = (...args) => DEBUG && console.log('[AdVanish]', ...args);
+const log  = (...args) => DEBUG && console.log('[Stupefy!]', ...args);
 ```
 Instead of `console.log()` everywhere, we wrap it. Benefits:
 - Set `DEBUG = false` to silence all logs in production
-- Every log has the same prefix — easy to filter in DevTools (type `[AdVanish]` in the console filter box)
+- Every log has the same prefix — easy to filter in DevTools (type `[Stupefy!]` in the console filter box)
 - `...args` uses rest parameters — passes any number of arguments through
 
 #### Lesson 4.3 — Multi-signal Detection
@@ -531,10 +531,10 @@ chrome.runtime.onMessage.addListener((msg, sender, resp) => {
 
 ### View content script logs
 DevTools → **Console** → Change "top" dropdown to your extension's content script context.
-Or: filter by `[AdVanish]` prefix.
+Or: filter by `[Stupefy!]` prefix.
 
 ### View service worker logs
-`chrome://extensions` → find AdVanish → click **"Service Worker"** link → opens a DevTools for the background context.
+`chrome://extensions` → find Stupefy! → click **"Service Worker"** link → opens a DevTools for the background context.
 
 ### Inspect chrome.storage
 In ANY extension context's DevTools console:
@@ -544,7 +544,7 @@ chrome.storage.local.clear();                 // reset all stored data
 ```
 
 ### Reload the extension after code changes
-`chrome://extensions` → click the refresh icon (↻) next to AdVanish.
+`chrome://extensions` → click the refresh icon (↻) next to Stupefy!.
 Then **refresh the Spotify tab** (content scripts don't auto-reload).
 
 ### The most common mistakes
@@ -584,4 +584,4 @@ Once you understand this project, here's how to go deeper:
 
 ---
 
-*This guide accompanies the AdVanish for Spotify source code. Read the source comments alongside this document for the full learning experience.*
+*This guide accompanies the Stupefy! source code. Read the source comments alongside this document for the full learning experience.*

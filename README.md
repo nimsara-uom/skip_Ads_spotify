@@ -1,4 +1,4 @@
-# AdVanish for Spotify ⚡
+# Stupefy! ⚡
 
 > A Chrome extension (Manifest V3) that detects Spotify Web Player ads and handles them via a **skip → speed-up → mute** fallback chain. Built as a learning project with 25+ intentional, educational commits.
 
@@ -92,7 +92,7 @@ findings.md                ← DOM recon documentation
 
 4. Click **Load unpacked** and select the repo folder (the one containing `manifest.json`)
 
-5. The AdVanish icon appears in your toolbar. Open `open.spotify.com` and wait for an ad.
+5. The Stupefy! icon appears in your toolbar. Open `open.spotify.com` and wait for an ad.
 
 ---
 

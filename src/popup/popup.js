@@ -65,7 +65,7 @@ function sendToBackground(message) {
   return new Promise((resolve) => {
     chrome.runtime.sendMessage(message, (response) => {
       if (chrome.runtime.lastError) {
-        console.warn('[AdVanish popup] background error:', chrome.runtime.lastError.message);
+        console.warn('[Stupefy! popup] background error:', chrome.runtime.lastError.message);
         resolve(null);
       } else {
         resolve(response);
@@ -86,7 +86,7 @@ function sendToContentScript(message) {
       chrome.tabs.sendMessage(tab.id, message, (response) => {
         if (chrome.runtime.lastError) {
           // Content script might not be on a Spotify tab — that's fine
-          console.warn('[AdVanish popup] content script error:', chrome.runtime.lastError.message);
+          console.warn('[Stupefy! popup] content script error:', chrome.runtime.lastError.message);
           resolve(null);
         } else {
           resolve(response);

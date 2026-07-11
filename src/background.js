@@ -24,7 +24,7 @@
 
 'use strict';
 
-const LOG = '[AdVanish BG]';
+const LOG = '[Stupefy! BG]';
 
 // ── First Install ─────────────────────────────────────────────
 // chrome.runtime.onInstalled fires when the extension is:

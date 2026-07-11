@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "AdVanish for Spotify",
+  "name": "Stupefy!",
   "version": "0.1.0",
   "description": "Detects Spotify Web Player ads and handles them via skip → speed-up → mute fallback chain.",
 

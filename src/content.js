@@ -1,5 +1,5 @@
 // ============================================================
-// content.js — AdVanish for Spotify
+// content.js — Stupefy!
 // ============================================================
 // Full implementation: DetectionModule + ReactionModule + StatsTracker + UIOverlay
 // Built commit-by-commit — see git log for individual lesson steps.
@@ -12,7 +12,7 @@ const CONFIG = {
   POLL_INTERVAL_MS:  800,
   SPEED_RATE:        16,    // How fast to play ads (16x ≈ ~1.5s per 30s ad)
   REACTION_DELAY_MS: 300,   // Small delay before reacting (lets DOM settle)
-  LOG_PREFIX:        '[AdVanish]',
+  LOG_PREFIX:        '[Stupefy!]',
 };
 
 const DEBUG = true;
@@ -528,7 +528,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // ============================================================
 
 async function init() {
-  log('Initializing AdVanish v0.1...');
+  log('Initializing Stupefy! v0.1...');
 
   const stored = await chrome.storage.local.get(['enabled', 'mode']);
   if (stored.enabled !== undefined) state.enabled = stored.enabled;
