@@ -20,6 +20,34 @@ const DEBUG = true;
 const log  = (...args) => DEBUG && console.log(CONFIG.LOG_PREFIX, ...args);
 const warn = (...args) => console.warn(CONFIG.LOG_PREFIX, ...args);
 
+// LESSON: Extension context can become "invalidated"
+// When you reload the extension (↻ in chrome://extensions), Chrome
+// injects a NEW content script but the OLD one keeps running with a
+// DEAD chrome.runtime. Any chrome.* call from the old script throws
+// "Extension context invalidated". This helper lets us check first.
+function isContextValid() {
+  try {
+    return !!(chrome && chrome.runtime && chrome.runtime.id);
+  } catch (e) {
+    return false;
+  }
+}
+
+// Safe wrapper for chrome.runtime.sendMessage
+function safeSendMessage(msg, callback) {
+  if (!isContextValid()) {
+    warn('safeSendMessage: extension context invalidated, skipping');
+    return;
+  }
+  try {
+    chrome.runtime.sendMessage(msg, callback || (() => {
+      if (chrome.runtime.lastError) { /* swallow */ }
+    }));
+  } catch (e) {
+    warn('safeSendMessage failed:', e.message);
+  }
+}
+
 
 // ============================================================
 // MODULE 1: DetectionModule
@@ -162,19 +190,28 @@ const ReactionModule = {
     log(`Reaction chain starting (mode: ${state.mode})...`);
     let succeeded = false;
 
-    if (state.mode === 'mute') {
-      // Mute-only mode: just silence the ad, no reload
-      if (this.tryMuteViaUI())  { this._activeAction = 'uimute'; succeeded = true; }
-    }
-    else {
-      // Auto or Speed mode: try to actually skip the ad
-      if      (this.tryClickSkip())    { this._activeAction = 'skip';   succeeded = true; }
-      else if (this.tryReloadSkip())   { this._activeAction = 'reload'; succeeded = true; }
-      else if (this.tryMuteViaUI())    { this._activeAction = 'uimute'; succeeded = true; }
+    try {
+      if (state.mode === 'mute') {
+        // Mute-only mode: just silence the ad, no reload
+        if (this.tryMuteViaUI())  { this._activeAction = 'uimute'; succeeded = true; }
+      }
+      else {
+        // Auto or Speed mode: try to actually skip the ad
+        if      (this.tryClickSkip())    { this._activeAction = 'skip';   succeeded = true; }
+        else if (this.tryReloadSkip())   { this._activeAction = 'reload'; succeeded = true; }
+        else if (this.tryMuteViaUI())    { this._activeAction = 'uimute'; succeeded = true; }
+      }
+    } catch (err) {
+      // If anything crashes, we still want the rest of the code to run
+      // (especially if a reload setTimeout was already queued)
+      warn('react() threw an error:', err.message);
     }
 
     if (succeeded) {
-      StatsTracker.increment();
+      // Don't bother messaging background if we're about to reload
+      if (this._activeAction !== 'reload') {
+        StatsTracker.increment();
+      }
       log(`✅ Reaction succeeded: ${this._activeAction}`);
     } else {
       warn('All reaction strategies failed — ad playing normally.');
@@ -482,21 +519,13 @@ const ReactionModule = {
 
 const StatsTracker = {
   increment() {
-    // BUG FIX: Wrap in try-catch to handle "Extension context invalidated"
-    // This error occurs when the extension is reloaded/updated while
-    // the content script is still running in an old tab. The old content
-    // script's chrome.runtime reference becomes stale.
-    try {
-      chrome.runtime.sendMessage({ type: 'AD_HANDLED' }, (response) => {
-        if (chrome.runtime.lastError) {
-          warn('sendMessage AD_HANDLED error (harmless):', chrome.runtime.lastError.message);
-          return;
-        }
-        log('StatsTracker: AD_HANDLED acknowledged by background');
-      });
-    } catch (err) {
-      warn('StatsTracker: extension context invalidated, skipping:', err.message);
-    }
+    safeSendMessage({ type: 'AD_HANDLED' }, (response) => {
+      if (chrome.runtime?.lastError) {
+        warn('AD_HANDLED error (harmless):', chrome.runtime.lastError.message);
+        return;
+      }
+      log('StatsTracker: AD_HANDLED acknowledged by background');
+    });
   },
 };
 
@@ -718,8 +747,9 @@ function startPolling() {
 // chrome.runtime.onMessage handles BOTH directions.
 // The `sender` object tells you who sent it.
 
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  log('Message from popup:', message.type);
+if (isContextValid()) {
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    log('Message from popup:', message.type);
 
   switch (message.type) {
     case 'SET_ENABLED':
@@ -740,7 +770,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ ok: true, adIsPlaying, state });
       break;
   }
-});
+  });
+} // end isContextValid() guard for message listener
 
 
 // ============================================================
