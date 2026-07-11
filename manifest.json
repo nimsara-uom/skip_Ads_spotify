@@ -21,6 +21,12 @@
   "content_scripts": [
     {
       "matches": ["*://open.spotify.com/*"],
+      "js": ["src/inject.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["*://open.spotify.com/*"],
       "js": ["src/content.js"],
       "run_at": "document_idle"
     }

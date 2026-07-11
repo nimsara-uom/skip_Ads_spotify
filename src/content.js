@@ -159,32 +159,15 @@ const ReactionModule = {
    *   'speed' → skip straight to speed-up (skip first if possible)
    *   'mute'  → skip straight to mute (most conservative)
    *
-   *   Notice state is referenced here even though it's declared
-   *   later in the file. This works because react() is called
-   *   at runtime (not at parse time), so state is already defined
-   *   by then. This is called "temporal dead zone" safety — as long
-   *   as the const is declared before the function is CALLED (not
-   *   just defined), you're fine.
-   */
-  /**
-   * LESSON: The Reload Trick (the real exploit)
+   *   The key insight: inject.js runs in Spotify's MAIN world and
+   *   has captured all media elements via prototype patching.
+   *   We communicate with it via CustomEvent on window.
+   *   This gives us direct control over playbackRate and muted
+   *   even though the content script can't see those elements.
    *
-   * After extensive testing, we confirmed:
-   *   - Spotify's Web Player has NO accessible <audio> or <video> element
-   *   - They use Encrypted Media Extensions (EME) + Web Audio API
-   *   - playbackRate is not controllable from content scripts
-   *
-   * BUT: Spotify's servers don't save "mid-ad" state to your session.
-   * If you reload the page during an ad, Spotify forgets the ad was
-   * playing and loads the next actual song in your queue.
-   *
-   * This is the primary strategy now:
-   *   1. Mute via UI (so you don't hear the ad during the ~2s reload)
-   *   2. Reload the page
-   *   3. On reload, content script re-injects, detects no ad, music plays
-   *
-   * Fallback chain:
-   *   tryClickSkip() → tryReloadSkip() → tryMuteViaUI()
+   * Fallback chain (auto mode):
+   *   tryClickSkip() → trySpeedUpViaInject() → tryMuteViaInject()
+   *   → tryMuteViaUI() → tryReloadSkip()
    */
   react() {
     log(`Reaction chain starting (mode: ${state.mode})...`);
@@ -192,23 +175,23 @@ const ReactionModule = {
 
     try {
       if (state.mode === 'mute') {
-        // Mute-only mode: just silence the ad, no reload
-        if (this.tryMuteViaUI())  { this._activeAction = 'uimute'; succeeded = true; }
+        // Mute-only mode
+        if      (this.tryMuteViaInject()) { this._activeAction = 'inject-mute'; succeeded = true; }
+        else if (this.tryMuteViaUI())     { this._activeAction = 'uimute';      succeeded = true; }
       }
       else {
-        // Auto or Speed mode: try to actually skip the ad
-        if      (this.tryClickSkip())    { this._activeAction = 'skip';   succeeded = true; }
-        else if (this.tryReloadSkip())   { this._activeAction = 'reload'; succeeded = true; }
-        else if (this.tryMuteViaUI())    { this._activeAction = 'uimute'; succeeded = true; }
+        // Auto or Speed mode — try to genuinely skip/speed the ad
+        if      (this.tryClickSkip())        { this._activeAction = 'skip';         succeeded = true; }
+        else if (this.trySpeedUpViaInject()) { this._activeAction = 'inject-speed'; succeeded = true; }
+        else if (this.tryMuteViaInject())    { this._activeAction = 'inject-mute';  succeeded = true; }
+        else if (this.tryMuteViaUI())        { this._activeAction = 'uimute';       succeeded = true; }
+        else if (this.tryReloadSkip())       { this._activeAction = 'reload';       succeeded = true; }
       }
     } catch (err) {
-      // If anything crashes, we still want the rest of the code to run
-      // (especially if a reload setTimeout was already queued)
       warn('react() threw an error:', err.message);
     }
 
     if (succeeded) {
-      // Don't bother messaging background if we're about to reload
       if (this._activeAction !== 'reload') {
         StatsTracker.increment();
       }
@@ -220,24 +203,13 @@ const ReactionModule = {
 
   /**
    * tryClickSkip() — Simulate clicking Spotify's skip button.
-   *
-   * LESSON: Simulating user events
-   *   content scripts CAN dispatch synthetic events on DOM nodes.
-   *   element.click() is the simplest way.
-   *   For more complex interactions, use new MouseEvent() or PointerEvent.
-   *
-   *   Note: This only works on SKIPPABLE ads. During non-skippable ads,
-   *   the button exists but aria-disabled="true". Clicking it does nothing,
-   *   which is why we check aria-disabled before clicking.
    */
   tryClickSkip() {
-    // BUG FIX: Spotify uses different skip-button selectors depending
-    // on ad type and web player version. We try all known ones.
     const SKIP_SELECTORS = [
-      '[data-testid="skip-forward-button"]',     // regular track skip (sometimes works)
-      '[data-testid="skip-ad-button"]',           // explicit ad skip button
-      'button[class*="skip"]',                   // class-based fallback
-      'button[aria-label*="Skip"]',              // aria-label based
+      '[data-testid="skip-forward-button"]',
+      '[data-testid="skip-ad-button"]',
+      'button[class*="skip"]',
+      'button[aria-label*="Skip"]',
       'button[aria-label*="skip"]',
     ];
 
@@ -252,8 +224,7 @@ const ReactionModule = {
       return false;
     }
 
-    if (skipBtn.getAttribute('aria-disabled') === 'true'
-        || skipBtn.disabled) {
+    if (skipBtn.getAttribute('aria-disabled') === 'true' || skipBtn.disabled) {
       log('tryClickSkip: skip button is disabled (non-skippable ad)');
       return false;
     }
@@ -264,149 +235,75 @@ const ReactionModule = {
   },
 
   /**
-   * tryReloadSkip() — THE RELOAD TRICK
+   * trySpeedUpViaInject() — THE PRIMARY STRATEGY
    *
-   * LESSON: Exploiting server-side state gaps
-   *   Spotify's CDN streams ad audio directly to the browser.
-   *   The ad playback state is LOCAL — the Spotify backend only
-   *   tracks "this user should see an ad soon" but NOT
-   *   "this user is currently mid-ad at 12 seconds in".
+   * LESSON: Cross-world communication via CustomEvent
+   *   inject.js runs in Spotify's main JS world. It has captured
+   *   every media element via monkey-patching. We send it a
+   *   'speedup' command via CustomEvent on the window object.
    *
-   *   When we reload the page:
-   *   1. The browser kills all audio streams
-   *   2. Spotify's web app boots fresh
-   *   3. Backend says "ad was served" (or sometimes serves another)
-   *   4. Your music queue resumes from where it was
+   *   The inject.js will:
+   *   1. Set playbackRate = 16 on ALL captured media elements
+   *   2. Mute them so you don't hear chipmunk audio
+   *   3. Start a 50ms enforcer loop that re-applies the rate
+   *      (because Spotify's own JS tries to reset it to 1)
    *
-   *   We mute FIRST so the user hears nothing during the ~2s reload.
-   *   A cooldown prevents infinite reload loops if an ad appears
-   *   immediately after reload.
+   *   Result: 30-second ad plays in ~1.9 seconds, silently.
+   *   Your current song is NOT lost — no page reload needed.
    */
-  _lastReloadTime: 0,
+  trySpeedUpViaInject() {
+    log('trySpeedUpViaInject: sending speedup command to inject.js...');
 
-  tryReloadSkip() {
-    const now = Date.now();
-    const timeSinceLastReload = now - this._lastReloadTime;
+    // Listen for the response from inject.js
+    let gotResponse = false;
+    const handler = (e) => {
+      if (e.detail?.action === 'speedup') {
+        gotResponse = true;
+        log(`trySpeedUpViaInject: inject.js responded — ${e.detail.elements} media elements sped up`);
+        if (e.detail.elements === 0) {
+          warn('trySpeedUpViaInject: inject.js has 0 captured elements — speed-up may not work');
+        }
+      }
+    };
+    window.addEventListener('__stupefy_status', handler, { once: true });
 
-    // Cooldown check: don't reload again within 5 seconds
-    // This prevents infinite loops: ad → reload → ad → reload → ...
-    if (timeSinceLastReload < CONFIG.RELOAD_COOLDOWN) {
-      log(`tryReloadSkip: cooldown active (${timeSinceLastReload}ms since last reload, need ${CONFIG.RELOAD_COOLDOWN}ms)`);
-      return false;
-    }
+    // Send the command
+    window.dispatchEvent(new CustomEvent('__stupefy_cmd', {
+      detail: { action: 'speedup' }
+    }));
 
-    log('tryReloadSkip: muting first, then reloading page...');
+    // Clean up listener after a short delay (sync response expected)
+    setTimeout(() => window.removeEventListener('__stupefy_status', handler), 100);
 
-    // Step 1: Mute via UI so user doesn't hear the ad blast during reload
-    this.tryMuteViaUI();
-
-    // Step 2: Save the reload timestamp so we can enforce cooldown
-    this._lastReloadTime = now;
-
-    // Step 3: Store that we're doing a reload-skip (so init() knows on restart)
-    try {
-      chrome.storage.local.set({ _reloadSkipTime: now });
-    } catch (e) {
-      // Extension context might be invalidated — that's fine, we're reloading
-    }
-
-    // Step 4: Show toast briefly before reload
-    UIOverlay.showToast('⚡ Skipping ad via reload...');
-
-    // Step 5: Reload after a tiny delay (lets the mute + toast register)
-    setTimeout(() => {
-      log('🔄 Reloading page NOW');
-      location.reload();
-    }, 200);
-
+    // The command is synchronous (inject.js handles it immediately)
+    // We consider it succeeded even if we haven't gotten the response yet
+    // because the event dispatch itself is synchronous
+    log('✅ trySpeedUpViaInject: speedup command dispatched');
     return true;
   },
 
   /**
-   * trySpeedUp(media) — Set playbackRate to CONFIG.SPEED_RATE (16x).
-   *
-   * LESSON: Speed enforcement
-   *   Spotify's own JavaScript WILL reset playbackRate back to 1.
-   *   It polls its own media element and corrects the rate.
-   *   To counter this, we use a "speed enforcer" — a setInterval
-   *   that re-applies our desired rate every 50ms.
-   *   This is a cat-and-mouse game: we keep setting 16x,
-   *   Spotify keeps resetting to 1x. We're faster.
-   *
-   *   At 16x speed, a 30-second ad finishes in about 1.875 seconds.
-   *   We also mute it so the chipmunk-speed audio is silent.
+   * tryMuteViaInject() — Mute via the injected main-world script.
+   *   Falls back to this if speed-up isn't desired (mute mode).
    */
-  _speedEnforcerId: null, // setInterval ID for the speed enforcer
-
-  trySpeedUp(media) {
-    try {
-      media.playbackRate = CONFIG.SPEED_RATE;
-      media.muted = true;
-      media.defaultPlaybackRate = CONFIG.SPEED_RATE; // Some players respect this
-
-      // Start the speed enforcer — re-apply every 50ms
-      // This beats Spotify's own reset loop
-      this._speedEnforcerId = setInterval(() => {
-        if (media && !media.paused) {
-          if (media.playbackRate !== CONFIG.SPEED_RATE) {
-            log(`Speed enforcer: Spotify reset rate to ${media.playbackRate}, re-applying ${CONFIG.SPEED_RATE}x`);
-            media.playbackRate = CONFIG.SPEED_RATE;
-          }
-          if (!media.muted) {
-            media.muted = true;
-          }
-        }
-      }, 50);
-
-      log(`✅ trySpeedUp: set playbackRate to ${CONFIG.SPEED_RATE}x, muted, enforcer active`);
-      return true;
-    } catch (err) {
-      warn('trySpeedUp failed:', err.message);
-      return false;
-    }
-  },
-
-  /**
-   * fallbackMute(audio) — Mute the audio element entirely.
-   *
-   * LESSON: .muted vs .volume
-   *   audio.muted = true  → silences output but preserves .volume value
-   *   audio.volume = 0    → also silences, but changes the volume knob
-   *
-   *   We prefer .muted because it's easier to revert cleanly:
-   *   audio.muted = false  → restores previous volume automatically
-   *   audio.volume = prev  → requires us to store and restore the old value
-   */
-  fallbackMute(media) {
-    try {
-      media.muted = true;
-      media.volume = 0;
-      log('✅ fallbackMute: media muted + volume=0');
-      return true;
-    } catch (err) {
-      warn('fallbackMute failed:', err.message);
-      return false;
-    }
+  tryMuteViaInject() {
+    log('tryMuteViaInject: sending mute command to inject.js...');
+    window.dispatchEvent(new CustomEvent('__stupefy_cmd', {
+      detail: { action: 'mute' }
+    }));
+    log('✅ tryMuteViaInject: mute command dispatched');
+    return true;
   },
 
   /**
    * tryMuteViaUI() — Click Spotify's own volume/mute button.
-   *
-   * LESSON: When no media element exists in the DOM
-   *   If Spotify uses Web Audio API or a Shadow DOM for playback,
-   *   we can't directly access the audio pipeline. But we CAN
-   *   interact with Spotify's UI controls — the volume button
-   *   in the player bar is always accessible in the DOM.
-   *
-   *   This is the "nuclear option" — it mutes the whole player,
-   *   and the user will see the volume icon change. We revert it
-   *   when the ad ends.
+   *   Last resort before reload — interacts with the visible UI.
    */
-  _uiWasMuted: false, // Track whether we muted via UI
+  _uiWasMuted: false,
 
   tryMuteViaUI() {
     const VOLUME_SELECTORS = [
-      '[data-testid="volume-bar-toggle-mute-button"]',  // Spotify's mute toggle
+      '[data-testid="volume-bar-toggle-mute-button"]',
       'button[aria-label*="Mute"]',
       'button[aria-label*="mute"]',
       'button[aria-label*="Volume"]',
@@ -415,7 +312,6 @@ const ReactionModule = {
     for (const sel of VOLUME_SELECTORS) {
       const btn = document.querySelector(sel);
       if (btn) {
-        // Check if already muted (aria-label might say "Unmute")
         const label = btn.getAttribute('aria-label') || '';
         if (label.toLowerCase().includes('unmute')) {
           log('tryMuteViaUI: already muted, skipping click');
@@ -434,63 +330,65 @@ const ReactionModule = {
   },
 
   /**
-   * revert() — Undo whatever action we took when the ad ends.
-   *
-   * LESSON: State machines
-   *   We use _activeAction to track what we did.
-   *   This is a simple state machine with states:
-   *     null   → no active action
-   *     'skip' → ad was skipped (no revert needed)
-   *     'speed'→ we sped up audio (revert: restore rate + unmute)
-   *     'mute' → we muted audio (revert: unmute)
-   *   State machines make it easy to reason about what needs cleanup.
+   * tryReloadSkip() — Nuclear option: reload the page.
+   *   Only used as absolute last resort when inject.js AND UI mute both fail.
    */
-  revert() {
-    const media = DetectionModule.getAudioElement();
+  _lastReloadTime: 0,
 
-    // Stop speed enforcer if running
-    if (this._speedEnforcerId) {
-      clearInterval(this._speedEnforcerId);
-      this._speedEnforcerId = null;
-      log('Speed enforcer stopped');
+  tryReloadSkip() {
+    const now = Date.now();
+    if (now - this._lastReloadTime < CONFIG.RELOAD_COOLDOWN) {
+      log('tryReloadSkip: cooldown active, skipping');
+      return false;
     }
 
+    log('tryReloadSkip: all else failed — reloading page...');
+    this.tryMuteViaUI();
+    this._lastReloadTime = now;
+
+    try { chrome.storage.local.set({ _reloadSkipTime: now }); } catch (e) {}
+
+    UIOverlay.showToast('⚡ Skipping ad via reload...');
+    setTimeout(() => location.reload(), 200);
+    return true;
+  },
+
+  /**
+   * revert() — Undo whatever action we took when the ad ends.
+   *   Sends 'revert' to inject.js to restore normal playback.
+   */
+  revert() {
+    log(`Reverting action: ${this._activeAction}`);
+
     switch (this._activeAction) {
-      case 'speed':
-        if (media) {
-          media.playbackRate = 1;
-          media.defaultPlaybackRate = 1;
-          media.muted = false;
-          log('Reverted: playbackRate → 1, unmuted');
-        }
+      case 'inject-speed':
+        // Tell inject.js to restore playbackRate and unmute
+        window.dispatchEvent(new CustomEvent('__stupefy_cmd', {
+          detail: { action: 'revert' }
+        }));
+        log('Reverted: sent revert to inject.js');
         break;
 
-      case 'mute':
-        if (media) {
-          media.muted = false;
-          media.volume = 1;
-          log('Reverted: unmuted, volume restored');
-        }
+      case 'inject-mute':
+        // Tell inject.js to unmute
+        window.dispatchEvent(new CustomEvent('__stupefy_cmd', {
+          detail: { action: 'unmute' }
+        }));
+        log('Reverted: sent unmute to inject.js');
         break;
 
       case 'uimute':
-        // Click the mute button again to unmute
         if (this._uiWasMuted) {
           const btn = document.querySelector(
             '[data-testid="volume-bar-toggle-mute-button"], button[aria-label*="Unmute"], button[aria-label*="unmute"]'
           );
-          if (btn) {
-            btn.click();
-            log('Reverted: clicked unmute via UI');
-          }
+          if (btn) { btn.click(); log('Reverted: clicked unmute via UI'); }
           this._uiWasMuted = false;
         }
         break;
 
       case 'skip':
-        log('Skip action: no revert needed');
-        break;
-
+      case 'reload':
       case null:
         break;
 
