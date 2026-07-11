@@ -50,8 +50,43 @@ const DetectionModule = {
     return false;
   },
 
+  /**
+   * getAudioElement() → HTMLMediaElement | null
+   *
+   * LESSON: Spotify does NOT use a plain <audio> tag!
+   * Modern Spotify uses Encrypted Media Extensions (EME) with a
+   * <video> element for DRM-protected audio playback. Yes — a
+   * <video> tag even though it's only playing audio. This is how
+   * browsers handle DRM (Widevine/PlayReady).
+   *
+   * We search for ALL media elements: video AND audio.
+   * Priority: playing element > element with src > any element
+   */
   getAudioElement() {
-    return document.querySelector('audio');
+    // Search BOTH video and audio — Spotify typically uses <video>
+    const all = Array.from(document.querySelectorAll('video, audio'));
+    log(`getAudioElement: found ${all.length} media elements in DOM`);
+
+    // Log details of each for debugging
+    all.forEach((el, i) => {
+      log(`  [${i}] <${el.tagName.toLowerCase()}> src=${el.src?.slice(0, 80) || '(none)'} paused=${el.paused} muted=${el.muted} rate=${el.playbackRate}`);
+    });
+
+    // Prefer one that is actively playing
+    const playing = all.find(a => !a.paused && !a.ended);
+    // Fall back to one with a MediaSource (src is blob:)
+    const withBlob = all.find(a => a.src?.startsWith('blob:'));
+    // Fall back to any with a src
+    const withSrc = all.find(a => a.src);
+    // Last resort: any media element at all
+    const found = playing || withBlob || withSrc || all[0] || null;
+
+    if (!found) {
+      warn('getAudioElement: NO media element found (no <video> or <audio> in DOM)');
+    } else {
+      log(`getAudioElement: selected <${found.tagName.toLowerCase()}> paused=${found.paused} src=${found.src?.slice(0, 60)}`);
+    }
+    return found;
   },
 };
 
@@ -104,29 +139,36 @@ const ReactionModule = {
    */
   react() {
     log(`Reaction chain starting (mode: ${state.mode})...`);
-    const audio = DetectionModule.getAudioElement();
+    const media = DetectionModule.getAudioElement();
+    let succeeded = false;
 
     // In 'mute' mode — skip the fancy stuff, just silence it
     if (state.mode === 'mute') {
-      if (audio && this.fallbackMute(audio)) {
-        this._activeAction = 'mute';
-      }
-      return;
+      if (media && this.fallbackMute(media))  { this._activeAction = 'mute';   succeeded = true; }
+      else if (this.tryMuteViaUI())           { this._activeAction = 'uimute'; succeeded = true; }
+    }
+    // In 'speed' mode — skip if possible, then speed
+    else if (state.mode === 'speed') {
+      if (this.tryClickSkip())                     { this._activeAction = 'skip';  succeeded = true; }
+      else if (media && this.trySpeedUp(media))     { this._activeAction = 'speed'; succeeded = true; }
+      else if (media && this.fallbackMute(media))   { this._activeAction = 'mute';  succeeded = true; }
+      else if (this.tryMuteViaUI())                 { this._activeAction = 'uimute'; succeeded = true; }
+    }
+    // 'auto' mode — full fallback chain (skip → speed → mute → UI mute)
+    else {
+      if      (this.tryClickSkip())                     { this._activeAction = 'skip';   succeeded = true; }
+      else if (media && this.trySpeedUp(media))         { this._activeAction = 'speed';  succeeded = true; }
+      else if (media && this.fallbackMute(media))       { this._activeAction = 'mute';   succeeded = true; }
+      else if (this.tryMuteViaUI())                     { this._activeAction = 'uimute'; succeeded = true; }
     }
 
-    // In 'speed' mode — skip if possible, then speed, skip mute-only fallback
-    if (state.mode === 'speed') {
-      if (this.tryClickSkip()) { this._activeAction = 'skip'; return; }
-      if (audio && this.trySpeedUp(audio)) { this._activeAction = 'speed'; return; }
-      return;
+    if (succeeded) {
+      StatsTracker.increment();
+      log(`✅ Reaction succeeded: ${this._activeAction}`);
+    } else {
+      warn('All reaction strategies failed — ad playing normally.');
+      warn('Media element found?', !!media);
     }
-
-    // 'auto' mode — full fallback chain
-    if (this.tryClickSkip()) { this._activeAction = 'skip'; return; }
-    if (audio && this.trySpeedUp(audio)) { this._activeAction = 'speed'; return; }
-    if (audio && this.fallbackMute(audio)) { this._activeAction = 'mute'; return; }
-
-    warn('All reaction strategies failed.');
   },
 
   /**
@@ -142,14 +184,29 @@ const ReactionModule = {
    *   which is why we check aria-disabled before clicking.
    */
   tryClickSkip() {
-    const skipBtn = document.querySelector('[data-testid="skip-forward-button"]');
+    // BUG FIX: Spotify uses different skip-button selectors depending
+    // on ad type and web player version. We try all known ones.
+    const SKIP_SELECTORS = [
+      '[data-testid="skip-forward-button"]',     // regular track skip (sometimes works)
+      '[data-testid="skip-ad-button"]',           // explicit ad skip button
+      'button[class*="skip"]',                   // class-based fallback
+      'button[aria-label*="Skip"]',              // aria-label based
+      'button[aria-label*="skip"]',
+    ];
+
+    let skipBtn = null;
+    for (const sel of SKIP_SELECTORS) {
+      const el = document.querySelector(sel);
+      if (el) { skipBtn = el; log('tryClickSkip: found button via', sel); break; }
+    }
 
     if (!skipBtn) {
-      log('tryClickSkip: no skip button found');
+      log('tryClickSkip: no skip button found with any selector');
       return false;
     }
 
-    if (skipBtn.getAttribute('aria-disabled') === 'true') {
+    if (skipBtn.getAttribute('aria-disabled') === 'true'
+        || skipBtn.disabled) {
       log('tryClickSkip: skip button is disabled (non-skippable ad)');
       return false;
     }
@@ -160,22 +217,42 @@ const ReactionModule = {
   },
 
   /**
-   * trySpeedUp(audio) — Set playbackRate to CONFIG.SPEED_RATE (16x).
+   * trySpeedUp(media) — Set playbackRate to CONFIG.SPEED_RATE (16x).
    *
-   * LESSON: playbackRate
-   *   The HTML spec says browsers MAY limit playbackRate to a certain range.
-   *   Chrome supports at least 0.0625 to 16.0 on <audio>/<video>.
-   *   Spotify's own JS might also try to reset playbackRate to 1.
-   *   We'll handle that in Commit 24 (SPA navigation / periodic check).
+   * LESSON: Speed enforcement
+   *   Spotify's own JavaScript WILL reset playbackRate back to 1.
+   *   It polls its own media element and corrects the rate.
+   *   To counter this, we use a "speed enforcer" — a setInterval
+   *   that re-applies our desired rate every 50ms.
+   *   This is a cat-and-mouse game: we keep setting 16x,
+   *   Spotify keeps resetting to 1x. We're faster.
    *
    *   At 16x speed, a 30-second ad finishes in about 1.875 seconds.
    *   We also mute it so the chipmunk-speed audio is silent.
    */
-  trySpeedUp(audio) {
+  _speedEnforcerId: null, // setInterval ID for the speed enforcer
+
+  trySpeedUp(media) {
     try {
-      audio.playbackRate = CONFIG.SPEED_RATE;
-      audio.muted = true; // Mute during speedup — nobody wants 16x voice ads
-      log(`✅ trySpeedUp: set playbackRate to ${CONFIG.SPEED_RATE}x, muted`);
+      media.playbackRate = CONFIG.SPEED_RATE;
+      media.muted = true;
+      media.defaultPlaybackRate = CONFIG.SPEED_RATE; // Some players respect this
+
+      // Start the speed enforcer — re-apply every 50ms
+      // This beats Spotify's own reset loop
+      this._speedEnforcerId = setInterval(() => {
+        if (media && !media.paused) {
+          if (media.playbackRate !== CONFIG.SPEED_RATE) {
+            log(`Speed enforcer: Spotify reset rate to ${media.playbackRate}, re-applying ${CONFIG.SPEED_RATE}x`);
+            media.playbackRate = CONFIG.SPEED_RATE;
+          }
+          if (!media.muted) {
+            media.muted = true;
+          }
+        }
+      }, 50);
+
+      log(`✅ trySpeedUp: set playbackRate to ${CONFIG.SPEED_RATE}x, muted, enforcer active`);
       return true;
     } catch (err) {
       warn('trySpeedUp failed:', err.message);
@@ -194,15 +271,60 @@ const ReactionModule = {
    *   audio.muted = false  → restores previous volume automatically
    *   audio.volume = prev  → requires us to store and restore the old value
    */
-  fallbackMute(audio) {
+  fallbackMute(media) {
     try {
-      audio.muted = true;
-      log('✅ fallbackMute: audio muted');
+      media.muted = true;
+      media.volume = 0;
+      log('✅ fallbackMute: media muted + volume=0');
       return true;
     } catch (err) {
       warn('fallbackMute failed:', err.message);
       return false;
     }
+  },
+
+  /**
+   * tryMuteViaUI() — Click Spotify's own volume/mute button.
+   *
+   * LESSON: When no media element exists in the DOM
+   *   If Spotify uses Web Audio API or a Shadow DOM for playback,
+   *   we can't directly access the audio pipeline. But we CAN
+   *   interact with Spotify's UI controls — the volume button
+   *   in the player bar is always accessible in the DOM.
+   *
+   *   This is the "nuclear option" — it mutes the whole player,
+   *   and the user will see the volume icon change. We revert it
+   *   when the ad ends.
+   */
+  _uiWasMuted: false, // Track whether we muted via UI
+
+  tryMuteViaUI() {
+    const VOLUME_SELECTORS = [
+      '[data-testid="volume-bar-toggle-mute-button"]',  // Spotify's mute toggle
+      'button[aria-label*="Mute"]',
+      'button[aria-label*="mute"]',
+      'button[aria-label*="Volume"]',
+    ];
+
+    for (const sel of VOLUME_SELECTORS) {
+      const btn = document.querySelector(sel);
+      if (btn) {
+        // Check if already muted (aria-label might say "Unmute")
+        const label = btn.getAttribute('aria-label') || '';
+        if (label.toLowerCase().includes('unmute')) {
+          log('tryMuteViaUI: already muted, skipping click');
+          this._uiWasMuted = false;
+          return true;
+        }
+        btn.click();
+        this._uiWasMuted = true;
+        log(`✅ tryMuteViaUI: clicked mute button via ${sel}`);
+        return true;
+      }
+    }
+
+    log('tryMuteViaUI: no mute button found');
+    return false;
   },
 
   /**
@@ -218,21 +340,44 @@ const ReactionModule = {
    *   State machines make it easy to reason about what needs cleanup.
    */
   revert() {
-    const audio = DetectionModule.getAudioElement();
+    const media = DetectionModule.getAudioElement();
+
+    // Stop speed enforcer if running
+    if (this._speedEnforcerId) {
+      clearInterval(this._speedEnforcerId);
+      this._speedEnforcerId = null;
+      log('Speed enforcer stopped');
+    }
 
     switch (this._activeAction) {
       case 'speed':
-        if (audio) {
-          audio.playbackRate = 1;
-          audio.muted = false;
+        if (media) {
+          media.playbackRate = 1;
+          media.defaultPlaybackRate = 1;
+          media.muted = false;
           log('Reverted: playbackRate → 1, unmuted');
         }
         break;
 
       case 'mute':
-        if (audio) {
-          audio.muted = false;
-          log('Reverted: unmuted');
+        if (media) {
+          media.muted = false;
+          media.volume = 1;
+          log('Reverted: unmuted, volume restored');
+        }
+        break;
+
+      case 'uimute':
+        // Click the mute button again to unmute
+        if (this._uiWasMuted) {
+          const btn = document.querySelector(
+            '[data-testid="volume-bar-toggle-mute-button"], button[aria-label*="Unmute"], button[aria-label*="unmute"]'
+          );
+          if (btn) {
+            btn.click();
+            log('Reverted: clicked unmute via UI');
+          }
+          this._uiWasMuted = false;
         }
         break;
 
@@ -241,7 +386,7 @@ const ReactionModule = {
         break;
 
       case null:
-        break; // Nothing was done
+        break;
 
       default:
         warn('revert: unknown action:', this._activeAction);
@@ -412,12 +557,16 @@ let adStartTime = null; // Track when ad started (for toast timing)
 
 function onAdStart() {
   adStartTime = Date.now();
-  StatsTracker.increment();
+  // BUG FIX: Don't count the stat here — count it only AFTER a
+  // reaction actually succeeds (inside ReactionModule.react()).
+  // Counting here meant every detected ad inflated the number,
+  // even if all strategies failed and the ad played in full.
+
+  UIOverlay.showToast('⚡ Ad detected — handling...');
 
   // React after a small delay to let the DOM settle
   setTimeout(() => {
     ReactionModule.react();
-    UIOverlay.showToast('⚡ Ad detected — handling...');
   }, CONFIG.REACTION_DELAY_MS);
 }
 
