@@ -51,34 +51,6 @@ open.spotify.com tab
 | 2 | Subtitle text contains "Advertisement" | 🟡 Moderate |
 | 3 | `document.title` starts with "Advertisement" | 🔴 Brittle |
 
----
-
-## Architecture
-
-```
-manifest.json              ← Extension config (MV3)
-src/
-├── content.js             ← Injected into open.spotify.com
-│     DetectionModule      ← Is an ad playing?
-│     ReactionModule       ← Handle it (skip/speed/mute)
-│     StatsTracker         ← Count handled ads
-│     UIOverlay            ← Show toast notification
-├── background.js          ← Service worker
-│     onInstalled          ← First-install setup
-│     onMessage            ← Badge + storage updates
-├── popup/
-│     popup.html/css/js    ← Extension toolbar popup
-└── onboard/
-      onboard.html/css     ← First-install welcome page
-icons/
-├── icon16.png
-├── icon48.png
-└── icon128.png
-findings.md                ← DOM recon documentation
-```
-
----
-
 ## Installation (Load Unpacked)
 
 1. Clone this repo:
@@ -107,24 +79,6 @@ findings.md                ← DOM recon documentation
 - 🔔 **Toast notification** — visual confirmation each ad is handled
 - 🎉 **Onboarding page** — shown on first install
 
----
-
-## What I Learned (25 Commits, 10 Key Concepts)
-
-| Concept | Where used |
-|---|---|
-| Manifest V3 structure | `manifest.json` |
-| Content script isolated world | `content.js` header |
-| `MutationObserver` API | `startObserver()` |
-| `HTMLMediaElement` API | `trySpeedUp()`, `fallbackMute()` |
-| Debouncing | `debounce()` utility |
-| State machines | `ReactionModule._activeAction` |
-| `chrome.storage.local` | `StatsTracker`, `init()` |
-| Extension message passing | `chrome.runtime.sendMessage` |
-| `chrome.action` badge | `background.js` |
-| SPA navigation (pushState) | `handleSpaNavigation()` |
-
----
 
 ## Limitations
 
@@ -136,20 +90,6 @@ findings.md                ← DOM recon documentation
 | Non-skippable video ads | Speed-up still works; skip button click has no effect |
 | Localized Spotify | "Advertisement" text varies by locale; we prefer `aria-label` |
 
----
-
-## Project Structure by Commit Phase
-
-| Phase | Commits | Topic |
-|---|---|---|
-| 1 | 1–3 | Manifest, popup shell, DOM recon |
-| 2 | 4–8 | DetectionModule (Observer + polling) |
-| 3 | 9–14 | ReactionModule (skip/speed/mute chain) |
-| 4 | 15–17 | Stats & chrome.storage messaging |
-| 5 | 18–21 | Toast UI & popup wiring |
-| 6 | 22–25 | Badge, onboarding, SPA nav, README |
-
----
 
 ## Tech Stack
 
@@ -161,4 +101,6 @@ findings.md                ← DOM recon documentation
 - `HTMLMediaElement` API for playback control
 
 ---
-
+##This is inspired by 
+- **https://github.com/clairefro/blockify
+- Huge thanks to whoever that is.
