@@ -1,587 +1,684 @@
-# LEARNING.md — Stupefy!: The Complete Learning Guide
+﻿# 📚 LEARNING.md — Stupefy! Chrome Extension Deep-Dive
 
-> **Who this is for:** Someone with basic JavaScript knowledge who wants to understand how Chrome extensions work by reading through a real project — commit by commit, concept by concept.
-> **This is Fully AI genarated(Its saying by human, yeah me, Nimsara), I built this cause I want people to understand the code, not just fork and vibe code netire thing
-> **How long it takes:** ~3–5 hours to read everything carefully. ~8–10 hours to re-build it yourself..
+> **What is this?**
+>**This is Fully AI genarated(Its saying by human, yeah me, Nimsara), I built this cause I want people to understand the code, not just fork and vibe code netire thing
+
+> A complete, beginner-to-advanced guide for understanding **every file, every concept, and every design decision** in the Stupefy! Chrome extension. Read this before diving into the source code.
 
 ---
 
-## How to Use This Guide
+## Table of Contents
 
-### The Right Order to Read Files
+1. [Project Overview](#1-project-overview)
+2. [How to Read This Project](#2-how-to-read-this-project)
+3. [Chrome Extension Fundamentals](#3-chrome-extension-fundamentals)
+4. [File-by-File Breakdown](#4-file-by-file-breakdown)
+5. [Core Concepts Deep Dive](#5-core-concepts-deep-dive)
+6. [Architecture and Data Flow](#6-architecture-and-data-flow)
+7. [API Reference Cheatsheet](#7-api-reference-cheatsheet)
+8. [Common Gotchas and Edge Cases](#8-common-gotchas-and-edge-cases)
+9. [How to Rebuild This From Scratch](#9-how-to-rebuild-this-from-scratch)
 
-Do NOT open files randomly. Chrome extensions have a specific execution model — reading in the wrong order will confuse you. Follow this exact sequence:
+---
+
+## 1. Project Overview
+
+**Stupefy!** is a Chrome extension (Manifest V3) that:
+- Detects Spotify Web Player ads using DOM signals
+- Handles them via a 3-tier fallback chain: Skip → Speed-Up → Mute
+- Tracks daily stats shown on the extension badge
+- Notifies the user with a toast notification
+
+**Why it was built:** As an educational project to learn Chrome extension development, DOM observation, browser APIs, and JavaScript patterns like debouncing, monkey-patching, and module patterns.
+
+> WARNING: Spotify Terms of Service prohibit ad-blocking. This project is for **learning only**.
+
+---
+
+## 2. How to Read This Project
+
+**Recommended reading order:**
 
 ```
-Step 1 → manifest.json            (understand the blueprint)
-Step 2 → findings.md              (understand what we're targeting)
-Step 3 → src/background.js        (understand the runtime environment)
-Step 4 → src/content.js           (the main brain — read top to bottom)
-Step 5 → src/popup/popup.html     (the UI skeleton)
-Step 6 → src/popup/popup.css      (the UI styles)
-Step 7 → src/popup/popup.js       (how popup talks to content.js)
-Step 8 → src/onboard/onboard.html (bonus: first-install page)
-```
-
-### How to Read the Source Code
-
-Every file is **heavily commented** — the comments ARE the lessons. Don't skim them.
-
-When you see a block like this in the source:
-```js
-// LESSON: MutationObserver vs setInterval
-// ...
-```
-That is a lesson checkpoint. Read it fully before moving on.
-
-### How to Follow the Git History
-
-Each commit is one lesson. To see exactly what changed in each commit:
-```bash
-git log --oneline          # list all commits with short messages
-git show <commit-hash>     # see the full diff for one commit
-```
-
-Example:
-```bash
-git log --oneline
-# → 4efab15 chore: init extension skeleton with manifest.json
-# → 661ce17 chore: add icons and popup shell
-# ...
-
-git show 4efab15           # see exactly what Commit 1 added
-```
-
-To read the code AS IT WAS at any commit (like rewinding time):
-```bash
-git checkout <commit-hash>   # rewind the whole repo to that state
-git checkout main            # come back to the present
+1. manifest.json          <- Start here: the extension ID card
+2. src/inject.js          <- The main world script that captures media
+3. src/content.js         <- The orchestrator: detect -> react -> revert
+4. src/background.js      <- The service worker: storage + badge
+5. src/popup/popup.html   <- The UI skeleton
+6. src/popup/popup.js     <- Popup logic and messaging
+7. src/popup/popup.css    <- Popup styles (Spotify dark theme)
+8. src/onboard/           <- First-install welcome page
 ```
 
 ---
 
-## Part 1 — Before You Write a Line of Code
+## 3. Chrome Extension Fundamentals
 
 ### What is a Chrome Extension?
 
-A Chrome extension is a small program Chrome loads alongside web pages. It can:
-- **Read and modify any web page's DOM** (via content scripts)
-- **Store data persistently** (via `chrome.storage`)
-- **Show a UI** (via popup pages)
-- **Run background logic** (via service workers)
-- **Communicate between all these pieces** (via message passing)
+A Chrome extension is a package of HTML, CSS, and JavaScript files that runs inside Chrome and can:
+- Modify web pages (via **content scripts**)
+- Run persistent background code (via a **service worker**)
+- Show a custom popup UI (via the **action popup**)
+- Access privileged browser APIs (storage, tabs, scripting, etc.)
 
-The key insight: **extensions are just HTML + CSS + JS** packaged with a special `manifest.json` file that tells Chrome what they're allowed to do.
+### Manifest V3 vs Manifest V2
 
-### The 4 Contexts in This Extension
-
-One of the hardest things for beginners is understanding that there are **4 completely separate JavaScript environments** running simultaneously:
-
-| Context | File | What it can access |
+| Feature | MV2 (old) | MV3 (current) |
 |---|---|---|
-| **Content Script** | `src/content.js` | Spotify's DOM, limited Chrome APIs |
-| **Service Worker** | `src/background.js` | Full Chrome APIs, NO DOM |
-| **Popup Page** | `src/popup/popup.js` | Full Chrome APIs, its own DOM (not Spotify's) |
-| **Onboard Page** | `src/onboard/` | Full Chrome APIs, its own DOM |
+| Background | Persistent page | Ephemeral Service Worker |
+| Script injection | chrome.tabs.executeScript | chrome.scripting.executeScript |
+| Remote code | Allowed | BLOCKED (no eval, no remote scripts) |
+| CSP | Configurable | Strict (no inline scripts in extension pages) |
 
-They cannot directly call each other's functions. They communicate by **passing messages** — like sending letters between isolated rooms.
-
----
-
-## Part 2 — File-by-File Lessons
+**Key implication:** In MV3, your background worker **sleeps** after ~30 seconds of inactivity and wakes up on demand. Never store state in module-level variables in background.js!
 
 ---
 
-### 📄 `manifest.json` — The Contract
+## 4. File-by-File Breakdown
 
-**Read this first. Every field matters.**
+### 4.1 manifest.json
 
-```json
-{
-  "manifest_version": 3,
-  "permissions": ["storage", "scripting", "tabs"],
-  "host_permissions": ["*://open.spotify.com/*"],
-  "content_scripts": [...],
-  "background": { "service_worker": "..." },
-  "action": { "default_popup": "..." }
+This is the **entry point** and **configuration file** for the entire extension. Chrome reads this first.
+
+| Field | Purpose |
+|---|---|
+| manifest_version | Must be 3 for MV3 |
+| name | Extension name shown in Chrome |
+| permissions | Declare what APIs you need (storage, scripting, tabs) |
+| host_permissions | Which URLs the extension can access |
+| background.service_worker | Path to the background script |
+| content_scripts | Which scripts inject into which pages, and when |
+| action | The toolbar icon, popup HTML, and badge color |
+
+**Lesson: Two content scripts, two worlds**
+
+inject.js runs early in the MAIN world so it can intercept media elements before Spotify's own JavaScript creates them.
+content.js runs later in the ISOLATED world — it cannot see Spotify's JS variables, but it can modify the DOM.
+
+---
+
+### 4.2 src/inject.js
+
+**Role:** Runs in Spotify's main JavaScript world. Captures every media element by monkey-patching HTMLMediaElement.prototype.play.
+
+**Key concepts demonstrated:**
+- Monkey-patching prototype methods
+- Function.prototype.apply
+- WeakSet vs Set for element tracking
+- CustomEvent for inter-world communication
+- Speed enforcer loop (fighting Spotify's own rate resets)
+
+**How it works:**
+
+```js
+// 1. Save the original play() before overriding it
+const originalPlay = HTMLMediaElement.prototype.play;
+
+// 2. Replace it with our wrapper
+HTMLMediaElement.prototype.play = function () {
+  capturedMedia.add(this);                        // Capture the element
+  return originalPlay.apply(this, arguments);     // Call original
+};
+```
+
+Every audio and video element in the entire page inherits from HTMLMediaElement. By patching the prototype, we intercept ALL of them — even ones Spotify creates dynamically later.
+
+**The Speed Enforcer:**
+
+Spotify's own JavaScript periodically resets playbackRate = 1. The enforcer runs every 50ms during an ad and re-applies our 16x rate.
+
+**Commands it listens for (via CustomEvent on window):**
+
+| Command | What it does |
+|---|---|
+| speedup | Sets playbackRate = 16 + starts enforcer loop |
+| revert | Restores playbackRate = 1, unmutes, stops enforcer |
+| mute | Sets el.muted = true, el.volume = 0 |
+| unmute | Restores volume |
+| status | Reports debug info back to content script |
+
+---
+
+### 4.3 src/content.js
+
+**Role:** The main orchestrator. Detects ads, triggers reactions, reverts when ads end, sends stats, and shows toasts.
+**Runs in:** Isolated world (default content script context)
+
+**DetectionModule** uses 3 DOM signals in priority order to detect ads:
+
+```
+Signal 1: aria-label on now-playing widget         <- Most reliable
+Signal 2: Subtitle text contains "Advertisement"   <- Moderate
+Signal 3: document.title starts with "Advertisement" <- Least reliable
+```
+
+**NOTE:** Spotify uses a video element (not audio) for DRM-protected audio playback via Encrypted Media Extensions (EME).
+
+**ReactionModule** implements the fallback chain:
+
+```
+tryClickSkip()         -> Simulates clicking Spotify skip button
+      | fails?
+trySpeedUpViaInject()  -> Sends speedup CustomEvent to inject.js
+      | fails?
+tryMuteViaInject()     -> Sends mute CustomEvent to inject.js
+      | fails?
+tryMuteViaUI()         -> Clicks Spotify volume/mute button
+      | fails?
+tryReloadSkip()        -> Nuclear option: page reload
+```
+
+**StatsTracker** routes stat increments through the background service worker via chrome.runtime.sendMessage.
+
+**UIOverlay** is an IIFE (Immediately Invoked Function Expression) that creates a module pattern with private state for injecting floating toast notifications.
+
+**Debounce function** wraps onDomChange to prevent the MutationObserver from firing dozens of times during a single DOM update burst.
+
+**Message Listener** receives commands from popup.js:
+
+| Message Type | Effect |
+|---|---|
+| SET_ENABLED | Toggles state.enabled on/off |
+| SET_MODE | Changes state.mode (auto / mute / speed) |
+| PING | Returns current state for popup status check |
+
+**SPA Navigation Handler** patches history.pushState to detect Spotify React navigation and resets state on page changes.
+
+---
+
+### 4.4 src/background.js
+
+**Role:** The MV3 Service Worker. Handles storage updates, badge management, and relays messages.
+
+**It is ephemeral:** Chrome starts it when needed, stops it after ~30s of inactivity. Never use module-level variables for state — use chrome.storage.local instead.
+
+**chrome.runtime.onInstalled** fires on first install, update, or Chrome update. Used to set default storage values and open the onboarding page.
+
+**Async sendResponse rule:** When a message handler needs async work before responding, it must return true to keep the message channel open.
+
+**Badge update:** Shows the number of ads handled today on the extension icon. Max ~4 visible characters.
+
+**Daily counter reset:** Compares today's date string. If a new day, resets statsToday to 1.
+
+---
+
+### 4.5 src/popup/popup.html
+
+The popup is a tiny Chrome-managed HTML page shown when the user clicks the extension icon.
+
+**Key lessons:**
+- No inline scripts allowed in MV3 extension pages due to CSP. Always use an external .js file.
+- The popup is recreated every time it opens and destroyed when it loses focus.
+- Always read state from chrome.storage.local on open; never rely on module-level variables.
+
+---
+
+### 4.6 src/popup/popup.js
+
+**Role:** Wires up the popup HTML, reads current state from background, and sends commands when user changes settings.
+
+**Two types of messages:**
+
+```js
+// To background.js — use chrome.runtime.sendMessage
+chrome.runtime.sendMessage({ type: 'GET_STATS' }, callback);
+
+// To content.js — use chrome.tabs.sendMessage (needs tab ID!)
+chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
+  chrome.tabs.sendMessage(tab.id, { type: 'SET_ENABLED', value: true });
+});
+```
+
+Why two different APIs?
+- chrome.runtime.sendMessage goes to the background service worker (no tab ID needed)
+- chrome.tabs.sendMessage goes to a content script in a specific tab (tab ID required)
+
+**Promise wrapper pattern:** Wrapping callback-based Chrome APIs in a Promise allows using async/await for cleaner code.
+
+---
+
+### 4.7 src/popup/popup.css
+
+Uses a Spotify-inspired dark theme with CSS custom properties:
+
+```css
+:root {
+  --green:   #1DB954;  /* Spotify green */
+  --dark:    #121212;  /* Background */
+  --surface: #1e1e1e;  /* Card backgrounds */
+  --text:    #ffffff;
+  --muted:   #a7a7a7;
 }
 ```
 
-**Lessons inside:**
-
-#### Lesson 1.1 — Manifest V3 (MV3)
-Chrome has had three manifest versions. V3 is the current standard (V2 is deprecated and will be removed). The biggest change: **no persistent background pages** — replaced by ephemeral service workers.
-
-#### Lesson 1.2 — permissions vs host_permissions
-MV3 deliberately separates these:
-- `permissions` = Chrome API access (`storage`, `tabs`, etc.)
-- `host_permissions` = which websites you can touch
-
-This split exists so users can clearly see: "this extension accesses Chrome storage AND reads/modifies spotify.com".
-
-#### Lesson 1.3 — content_scripts `run_at`
-```json
-"run_at": "document_idle"
-```
-This means: inject the script after `DOMContentLoaded` fires AND after subresources (images, scripts) have had a chance to load. The alternative `document_start` injects before the DOM is built — too early for our use case.
-
-#### Lesson 1.4 — The `action` key
-Controls the toolbar button. The popup is just an HTML page Chrome shows when the user clicks the icon. `default_badge_background_color` sets the badge color (we use Spotify green).
+**Toggle switch:** Pure CSS using a hidden checkbox and styled span. The ::before pseudo-element is the circular knob.
 
 ---
 
-### 📄 `findings.md` — Recon Before Code
+### 4.8 src/onboard/onboard.html and .css
 
-**Read this second. Never write a content script without recon.**
+A welcome page shown automatically on first install (opened via chrome.tabs.create() in background.js).
 
-This file documents what we found by inspecting Spotify's DOM in Chrome DevTools. The key skill: **reading a live web app's DOM to find stable targeting signals**.
-
-#### Lesson 2.1 — How to do DOM recon
-1. Open `open.spotify.com`
-2. Press `F12` → Elements tab
-3. Click the inspector cursor (top-left of DevTools panel)
-4. Click on any part of the UI you want to target
-5. Look at the highlighted element's attributes
-
-#### Lesson 2.2 — Why `data-testid` is more stable than class names
-```html
-<!-- BAD target — class name is a hashed bundle output, changes every deploy: -->
-<div class="a8b2c4 d9e1f5">
-
-<!-- GOOD target — test ID is set by developers intentionally, stable: -->
-<div data-testid="now-playing-widget">
-```
-React apps (like Spotify) use CSS modules that generate random class names. `data-testid` attributes are added manually by developers for testing and don't change with CSS refactors.
-
-#### Lesson 2.3 — Why `aria-label` is the most reliable signal
-Aria attributes are **accessibility standards**. Spotify MUST maintain them for screen reader users. They're set deliberately and rarely change. Our primary detection signal is:
-```js
-document.querySelector('[data-testid="now-playing-widget"][aria-label="Advertisement"]')
-```
-
-#### Lesson 2.4 — HTMLMediaElement API
-By running `document.querySelector('audio')` in the DevTools console on Spotify, we confirmed:
-- A standard `<audio>` element IS accessible
-- `playbackRate` is writable (set to 16 to fast-forward)
-- `muted` is writable (set to true to silence)
-- These changes survive Spotify's own JS for long enough to matter
+**Purpose:** Greets new users, explains how to use the extension in 4 steps, includes a ToS disclaimer.
 
 ---
 
-### 📄 `src/background.js` — The Service Worker
+## 5. Core Concepts Deep Dive
 
-**Read this third. Understand the runtime model before the content script.**
-
-#### Lesson 3.1 — What a Service Worker is (and isn't)
-In MV3, the background "page" is a **service worker**:
+### 5.1 The Two Worlds of Chrome Extensions
 
 ```
-Old MV2:  Persistent background page → always running → wastes memory
-New MV3:  Service worker → wakes up on events → sleeps after ~30s idle
+MAIN WORLD (Spotify JS context)
+- Spotify React app runs here
+- Audio/Video elements created here
+- inject.js runs here ("world": "MAIN")
+- CANNOT access chrome.* APIs
+
+ISOLATED WORLD (Content Script context)
+- content.js runs here
+- CAN see the DOM
+- CANNOT see Spotify JS variables
+- HAS access to chrome.* APIs
+
+SHARED: The DOM (document, window)
+They CAN communicate via CustomEvent on window
 ```
 
-Critical consequences:
-- **No DOM** — you cannot do `document.querySelector()` here
-- **No persistent variables** — module-level `let x = 5` will be lost when the worker sleeps. Always read from `chrome.storage`.
-- **Event-driven** — everything happens in response to messages or Chrome events
-
-#### Lesson 3.2 — chrome.runtime.onInstalled
-```js
-chrome.runtime.onInstalled.addListener((details) => {
-  if (details.reason === 'install') { /* first time */ }
-  if (details.reason === 'update') { /* extension updated */ }
-});
-```
-This fires once when the extension is installed or updated. Perfect for:
-- Setting default storage values
-- Opening an onboarding tab (`chrome.tabs.create()`)
-
-#### Lesson 3.3 — chrome.runtime.onMessage
-```js
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  // message  → what was sent
-  // sender   → who sent it (tab ID, URL, etc.)
-  // sendResponse → function to call to reply
-
-  if (message.type === 'AD_HANDLED') { ... }
-
-  return true; // ← CRITICAL for async responses (after await)
-});
-```
-The `return true` is a common gotcha: if you need to call `sendResponse` asynchronously (after an `await`), you MUST `return true` from the listener to keep the message channel open. If you forget, Chrome closes it before your async code runs.
-
-#### Lesson 3.4 — chrome.action.setBadgeText
-```js
-chrome.action.setBadgeText({ text: '5' });
-chrome.action.setBadgeBackgroundColor({ color: '#1DB954' });
-```
-The badge is the small label on the extension icon. Maximum ~4 characters before it clips. We use it to show the daily ad count.
+Why does this matter? Spotify creates media elements in its own JS context. inject.js runs in the MAIN world to capture them at creation time via prototype patching.
 
 ---
 
-### 📄 `src/content.js` — The Main Brain
+### 5.2 MutationObserver vs setInterval
 
-**Read this fourth. Read it top to bottom — it's structured as a progression.**
+The extension uses BOTH for ad detection:
 
-This is the most important file. It's structured in this order:
-1. Config & logging helpers
-2. `DetectionModule` — answers "is an ad playing?"
-3. `ReactionModule` — answers "what do we do about it?"
-4. `StatsTracker` — counts handled ads
-5. `UIOverlay` — shows the toast notification
-6. `debounce()` utility
-7. State variables
-8. `startObserver()` and `startPolling()`
-9. Message listener (popup → content)
-10. `init()` — wires everything together
-11. `handleSpaNavigation()` — fixes Spotify's SPA routing
-
-#### Lesson 4.1 — The Isolated World
 ```js
-'use strict'; // ← Enables strict mode (catches more errors)
-```
-Content scripts run in an **isolated world**:
-- Same DOM as Spotify's page ✅
-- Cannot access Spotify's JavaScript variables ❌
-- Spotify cannot access our variables ❌
-- We CAN call `document.querySelector()`, modify the DOM, dispatch events ✅
-
-This isolation is a **security feature** — it prevents malicious pages from stealing data from extensions.
-
-#### Lesson 4.2 — Centralizing Logs
-```js
-const DEBUG = true;
-const log  = (...args) => DEBUG && console.log('[Stupefy!]', ...args);
-```
-Instead of `console.log()` everywhere, we wrap it. Benefits:
-- Set `DEBUG = false` to silence all logs in production
-- Every log has the same prefix — easy to filter in DevTools (type `[Stupefy!]` in the console filter box)
-- `...args` uses rest parameters — passes any number of arguments through
-
-#### Lesson 4.3 — Multi-signal Detection
-```js
-detectAd() {
-  // Signal 1 (best)
-  const widget = document.querySelector('[data-testid="now-playing-widget"]');
-  if (widget?.getAttribute('aria-label') === 'Advertisement') return true;
-
-  // Signal 2 (fallback)
-  const subtitle = document.querySelector('[data-testid="context-item-info-subtitles"]');
-  if (subtitle?.textContent?.includes('Advertisement')) return true;
-
-  // Signal 3 (last resort)
-  if (document.title.startsWith('Advertisement')) return true;
-
-  return false;
-}
-```
-**Optional chaining (`?.`)** — `widget?.getAttribute(...)` returns `undefined` instead of throwing if `widget` is `null`. Safe DOM querying without try/catch.
-
-Never rely on a single DOM signal. Spotify can change one thing and break you. Multiple signals create redundancy.
-
-#### Lesson 4.4 — MutationObserver (the right way to watch DOM)
-```js
-const observer = new MutationObserver(callback);
+// Method 1: MutationObserver — fires immediately on DOM changes
+const observer = new MutationObserver(onDomChange);
 observer.observe(document.body, {
-  childList: true,       // watch for added/removed elements
-  subtree: true,         // watch ALL descendants
-  attributes: true,      // watch attribute changes
-  attributeFilter: ['aria-label', 'aria-disabled'], // only these attrs
+  childList: true,         // Watch for added/removed elements
+  subtree: true,           // Watch the entire subtree
+  attributes: true,        // Watch attribute changes
+  attributeFilter: ['aria-label', 'aria-disabled'],
 });
-```
-`MutationObserver` fires your callback **only when the DOM actually changes**. This is far more efficient than `setInterval` which runs whether or not anything changed.
 
-The `attributeFilter` is important — without it, every attribute change on any element in `<body>` would trigger your callback. By filtering to just `aria-label` and `aria-disabled`, we reduce noise significantly.
-
-#### Lesson 4.5 — Why we still need setInterval as a fallback
-```js
+// Method 2: setInterval — polling fallback every 800ms
 setInterval(onDomChange, 800);
 ```
-MutationObserver can miss changes in edge cases:
-- If the script attaches AFTER the DOM mutation already happened
-- If Spotify uses CSS transitions that don't mutate the DOM
-- If the observer hasn't attached yet (race condition at page load)
 
-The polling fallback catches these cases. At 800ms it's cheap enough not to matter for CPU.
+| | MutationObserver | setInterval |
+|---|---|---|
+| When it fires | Immediately on DOM change | Every 800ms regardless |
+| CPU cost | Zero when idle | Small but constant |
+| Risk | Can miss non-DOM changes | Never misses, but delayed |
+| Why both? | Fast response | Catch anything observer missed |
 
-#### Lesson 4.6 — Debouncing
+---
+
+### 5.3 Monkey-Patching and Prototype Interception
+
+Monkey-patching means modifying an existing function or object at runtime to add behavior.
+
+```js
+const originalPlay = HTMLMediaElement.prototype.play;
+
+HTMLMediaElement.prototype.play = function () {
+  capturedMedia.add(this);                        // Our addition
+  return originalPlay.apply(this, arguments);     // Original behavior preserved
+};
+```
+
+**Function.prototype.apply(thisArg, args)**
+- thisArg = the this context (the media element that called .play())
+- arguments = passes through all original arguments unchanged
+
+**Why prototype patching?** Because ALL audio and video elements inherit from HTMLMediaElement. Patching the prototype means our code intercepts EVERY media element, even those created dynamically later.
+
+**CRITICAL: Always call the original function!** If you don't, Spotify audio will break.
+
+---
+
+### 5.4 Debouncing
+
+A debounce function prevents rapid-fire calls from triggering the same action many times:
+
 ```js
 function debounce(fn, delay) {
   let timerId = null;
   return function (...args) {
-    clearTimeout(timerId);
-    timerId = setTimeout(() => fn(...args), delay);
+    clearTimeout(timerId);                          // Cancel previous timer
+    timerId = setTimeout(() => fn(...args), delay); // Schedule new one
   };
 }
 ```
-**Why we need it:** A single DOM mutation can trigger the MutationObserver dozens of times (each child change is a separate mutation). Without debouncing, we'd try to click the skip button 30 times in one second.
 
-**How it works:**
-```
-call 1 → clear any pending timer, set timer for 200ms
-call 2 → clear that timer, set NEW timer for 200ms
-call 3 → clear that timer, set NEW timer for 200ms
-...200ms passes with no new calls...
-→ fn() fires ONCE
-```
-The function only runs after a burst of calls has SETTLED.
+Without debounce: DOM mutation fires react() 30 times, clicks skip 30 times.
+With 200ms debounce: All mutations coalesce into ONE call after the burst settles.
 
-#### Lesson 4.7 — HTMLMediaElement API
+---
+
+### 5.5 The Fallback Chain Pattern
+
+A robust pattern: try the best option first, degrade gracefully if it fails.
+
+```
+tryClickSkip()         -> Best UX (ad gone instantly)
+      | fails?
+trySpeedUpViaInject()  -> Good UX (ad over in ~1.9s)
+      | fails?
+tryMuteViaInject()     -> OK (hear nothing, but ad runs)
+      | fails?
+tryMuteViaUI()         -> Last resort UI interaction
+      | fails?
+tryReloadSkip()        -> Nuclear: page reload (slow, loses player state)
+```
+
+Each step:
+1. Returns true on success, false on failure
+2. Sets _activeAction so revert() knows what to undo
+3. Is protected by try/catch to prevent one failure from crashing everything
+
+---
+
+### 5.6 Cross-World Communication via CustomEvent
+
+Content scripts and main-world scripts share window. They pass messages via CustomEvent:
+
 ```js
-const audio = document.querySelector('audio');
+// content.js (isolated world) -> inject.js (main world)
+window.dispatchEvent(new CustomEvent('__stupefy_cmd', {
+  detail: { action: 'speedup' }
+}));
 
-// Speed up to 16x (30s ad → ~1.9s)
-audio.playbackRate = 16;
-audio.muted = true;      // Silence the chipmunk voice
+// inject.js listens in main world
+window.addEventListener('__stupefy_cmd', (e) => {
+  const action = e.detail?.action;
+  // handle it...
+});
 
-// Revert when ad ends
-audio.playbackRate = 1;
-audio.muted = false;
+// inject.js -> content.js (response)
+window.dispatchEvent(new CustomEvent('__stupefy_status', {
+  detail: { ok: true, action: 'speedup', elements: 3 }
+}));
 ```
-`playbackRate` is capped at 16 in Chrome. At 16x, a 30-second ad plays in 1.875 seconds. We also mute because 16x audio is unintelligible and jarring.
 
-**`muted` vs `volume`:**
+Use double underscores and a unique prefix to avoid conflicts with Spotify events.
+
+---
+
+### 5.7 SPA Navigation Handling
+
+Spotify is a React single-page application. When you click pages, the URL changes but the page never reloads. Chrome injected our content script once and it keeps running.
+
+**The solution:** Patch history.pushState:
+
 ```js
-audio.muted = true;   // silences, preserves .volume value
-audio.muted = false;  // restores — the old volume comes back automatically
-
-audio.volume = 0;     // also silences, but CHANGES the volume slider
-audio.volume = prev;  // must manually store and restore prev value
-```
-We prefer `muted` because the revert is guaranteed to be clean.
-
-#### Lesson 4.8 — State Machines
-```js
-const ReactionModule = {
-  _activeAction: null, // 'skip' | 'speed' | 'mute' | null
-
-  react() {
-    if (...skip works...) { this._activeAction = 'skip'; return; }
-    if (...speed works...) { this._activeAction = 'speed'; return; }
-    if (...mute works...) { this._activeAction = 'mute'; return; }
-  },
-
-  revert() {
-    switch (this._activeAction) {
-      case 'speed': audio.playbackRate = 1; audio.muted = false; break;
-      case 'mute':  audio.muted = false; break;
-      case 'skip':  /* nothing to undo */ break;
-    }
-    this._activeAction = null;
-  }
+const originalPushState = history.pushState.bind(history);
+history.pushState = function (...args) {
+  originalPushState(...args);  // Call real pushState first
+  onNavigate();                // Then run our cleanup
 };
+
+window.addEventListener('popstate', onNavigate); // Back/forward buttons
 ```
-`_activeAction` is a simple state machine. It tracks what we did so `revert()` knows exactly what to undo. Without it, we'd have to guess — "did we mute or speed up? should we unmute AND reset rate?"
 
-State machines make cleanup deterministic and safe.
+onNavigate() resets adIsPlaying = false and calls ReactionModule.revert() to clean up.
 
-#### Lesson 4.9 — IIFE (Immediately Invoked Function Expression)
+---
+
+### 5.8 Extension Context Invalidation
+
+When you reload an extension during development, Chrome injects a NEW content script but the OLD one keeps running with a DEAD chrome.runtime. Any chrome.* call throws "Extension context invalidated".
+
+**The fix:**
+
 ```js
-const UIOverlay = (() => {
-  let stylesInjected = false; // ← private variable
-
-  return {
-    showToast(message) { ... }
-  };
-})(); // ← called immediately
-```
-The `(() => { ... })()` pattern creates a **private scope**. Variables inside the IIFE (`stylesInjected`, `hideTimeout`) are not accessible from outside — they're encapsulated in the closure. This is a pre-ES6 module pattern still commonly used in content scripts (which can't use `import/export`).
-
-#### Lesson 4.10 — Message Listening in Content Script
-```js
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  switch (message.type) {
-    case 'SET_ENABLED': state.enabled = message.value; break;
-    case 'SET_MODE':    state.mode = message.value; break;
-    case 'PING':        sendResponse({ ok: true, adIsPlaying }); break;
+function isContextValid() {
+  try {
+    return !!(chrome && chrome.runtime && chrome.runtime.id);
+  } catch (e) {
+    return false;
   }
-});
-```
-The content script listens for commands from the popup. Important:
-- `chrome.runtime.onMessage` handles messages from ANYWHERE (popup, background, other content scripts)
-- Use `sender` to verify who's talking if security matters
-- Always call `sendResponse()` or Chrome will show a warning
-
-#### Lesson 4.11 — SPA Navigation (The React App Problem)
-```js
-function handleSpaNavigation() {
-  const originalPushState = history.pushState.bind(history);
-  history.pushState = function (...args) {
-    originalPushState(...args);   // do the real navigation
-    onNavigate();                  // then tell us
-  };
-  window.addEventListener('popstate', onNavigate); // back/forward buttons
 }
 ```
-Spotify uses React Router. When you click between pages, it calls `history.pushState()` to change the URL without reloading. Chrome does NOT re-inject the content script on these navigations.
 
-**Monkey-patching** (`history.pushState = function(...)`) wraps the native browser function so we can intercept calls. This is the standard content script technique for SPA navigation awareness.
+Always check this before making chrome.* calls in long-running content scripts.
 
 ---
 
-### 📄 `src/popup/popup.js` — The Popup Logic
+## 6. Architecture and Data Flow
 
-**Read this fifth.**
-
-#### Lesson 5.1 — Popup Lifecycle
 ```
-User clicks icon → popup.html loads → popup.js runs → popup shows
-User clicks elsewhere → popup is DESTROYED (not hidden)
-User clicks icon again → popup.html loads FRESH again
+open.spotify.com tab
+        |
+  inject.js (MAIN world, document_start)
+  - Patches .play() on HTMLMediaElement.prototype
+  - Tracks all media elements in capturedMedia Set
+  - Speed enforcer loop (50ms) fights Spotify rate resets
+  - Listens: window event '__stupefy_cmd'
+        |
+        | CustomEvent (__stupefy_cmd / __stupefy_status)
+        |
+  content.js (ISOLATED world, document_idle)
+  - DetectionModule: MutationObserver + setInterval(800ms)
+  - ReactionModule: tryClickSkip -> trySpeedUp -> tryMute -> tryReload
+  - StatsTracker: sends AD_HANDLED to background
+  - UIOverlay: shows toast notifications
+        |
+        | chrome.runtime.sendMessage({ type: 'AD_HANDLED' })
+        |
+  background.js (Service Worker)
+  - Updates statsToday and statsTotal in chrome.storage.local
+  - Updates chrome.action badge text
+  - Handles GET_STATS for popup
+  - Handles SET_SETTINGS from popup
+        |
+        | chrome.runtime.sendMessage / chrome.tabs.sendMessage
+        |
+  popup.js + popup.html
+  - Toggle enable/disable
+  - Change mode (auto / mute / speed)
+  - Display daily stats count
 ```
-This means:
-- Module-level variables reset on every open
-- Always read from `chrome.storage.local` when the popup opens
-- Always save to `chrome.storage.local` when settings change
 
-#### Lesson 5.2 — chrome.tabs.sendMessage vs chrome.runtime.sendMessage
-```js
-// content.js → background.js:
-chrome.runtime.sendMessage({ type: 'AD_HANDLED' });
-// (no tab ID needed — goes straight to the service worker)
+### Message Routing Summary
 
-// popup.js → content.js:
-chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
-  chrome.tabs.sendMessage(tab.id, { type: 'SET_ENABLED', value: true });
-});
-// (must get the active tab's ID first)
-```
-**Key difference:** `runtime.sendMessage` goes to the background worker. `tabs.sendMessage` goes to a content script in a specific tab. The popup must know WHICH tab to send to (it gets it via `chrome.tabs.query`).
-
-#### Lesson 5.3 — Wrapping Chrome APIs in Promises
-```js
-function sendToBackground(message) {
-  return new Promise((resolve) => {
-    chrome.runtime.sendMessage(message, (response) => {
-      if (chrome.runtime.lastError) { resolve(null); return; }
-      resolve(response);
-    });
-  });
-}
-```
-Chrome's extension APIs use callbacks, not Promises. We wrap them so we can use `async/await`:
-```js
-const data = await sendToBackground({ type: 'GET_STATS' });
-```
-This is a very common pattern in extension development.
-
----
-
-## Part 3 — The 10 Core Concepts Summary
-
-| # | Concept | Where to See It | Key Takeaway |
+| From | To | API | Message Types |
 |---|---|---|---|
-| 1 | **MV3 Manifest** | `manifest.json` | Declares what the extension is and what it's allowed to do |
-| 2 | **4 Isolated Contexts** | All files | Content, Background, Popup, and Extension pages don't share JS |
-| 3 | **Content Script Isolation** | `content.js` top | Same DOM, separate JS world — security boundary |
-| 4 | **MutationObserver** | `startObserver()` | Watch DOM changes with zero CPU cost when idle |
-| 5 | **HTMLMediaElement API** | `trySpeedUp()` | `playbackRate`, `muted`, `volume` are all writable |
-| 6 | **Debouncing** | `debounce()` | Coalesce rapid event bursts into one call |
-| 7 | **State Machines** | `ReactionModule` | Track what you did so you can undo it cleanly |
-| 8 | **chrome.storage.local** | `background.js`, `init()` | Persistent key-value store across tab reloads and restarts |
-| 9 | **Message Passing** | `StatsTracker`, `popup.js` | `runtime.sendMessage` → background, `tabs.sendMessage` → content |
-| 10 | **SPA Navigation** | `handleSpaNavigation()` | Monkey-patch `history.pushState` to detect React Router changes |
+| content.js | background.js | chrome.runtime.sendMessage | AD_HANDLED |
+| popup.js | background.js | chrome.runtime.sendMessage | GET_STATS, SET_SETTINGS |
+| popup.js | content.js | chrome.tabs.sendMessage | SET_ENABLED, SET_MODE, PING |
+| background.js | popup.js | sendResponse(data) | stats data |
+| content.js | inject.js | CustomEvent on window | __stupefy_cmd |
+| inject.js | content.js | CustomEvent on window | __stupefy_status |
 
 ---
 
-## Part 4 — How to Build This Yourself from Scratch
+## 7. API Reference Cheatsheet
 
-If you want to **re-build** this project to really learn it:
+### HTMLMediaElement API
 
-### Step 1: Start with just the manifest
-Create `manifest.json` with only the required fields. Load it in Chrome (`chrome://extensions → Load unpacked`). Confirm it loads without errors.
-
-### Step 2: Add a minimal content script
 ```js
-// src/content.js
-console.log('Hello from content script!');
+el.playbackRate       // 1 = normal, 16 = very fast (read/write)
+el.muted              // true/false (read/write)
+el.volume             // 0.0 to 1.0 (read/write)
+el.paused             // is it paused? (read-only)
+el.ended              // has it finished? (read-only)
+el.duration           // total length in seconds (read-only)
+el.currentTime        // seconds into the track (read/write)
+el.src                // source URL (read/write)
+el.defaultPlaybackRate // default rate for new content (read/write)
 ```
-Reload the extension, open Spotify, check the console. You should see the log.
 
-### Step 3: Add detection only (no reactions)
-Copy just `DetectionModule.detectAd()` and log the result every second:
+### Chrome Extension APIs Used
+
 ```js
-setInterval(() => console.log('Ad?', DetectionModule.detectAd()), 1000);
+// Storage
+chrome.storage.local.get(['key1', 'key2'], callback)
+chrome.storage.local.set({ key: value }, callback)
+chrome.storage.local.remove('key', callback)
+
+// Messaging
+chrome.runtime.sendMessage(message, callback)         // to background
+chrome.runtime.onMessage.addListener(handler)
+chrome.tabs.sendMessage(tabId, message, callback)     // to content script
+chrome.tabs.query({ active: true, currentWindow: true }, callback)
+
+// Badge
+chrome.action.setBadgeText({ text: 'string' })
+chrome.action.setBadgeBackgroundColor({ color: '#hex' })
+
+// Lifecycle
+chrome.runtime.onInstalled.addListener(details => {})
+chrome.runtime.getURL('relative/path')               // -> chrome-extension://...
+chrome.tabs.create({ url: 'someUrl' })
+
+// Context check
+chrome.runtime.id          // undefined if context is invalidated
+chrome.runtime.lastError   // error from last API call
 ```
-Wait for an ad. Watch the console. Confirm detection works before adding reactions.
 
-### Step 4: Add reactions one at a time
-Add `tryClickSkip()` first. Test it. Then add `trySpeedUp()`. Then `fallbackMute()`.
-**Don't add all three at once** — you won't know which one is working.
+### DOM APIs Used
 
-### Step 5: Add the popup last
-The popup is cosmetic — it doesn't affect detection or reaction. Get the core working first, then add the UI.
-
-### Step 6: Add message passing
-This is the trickiest part. Add logging on BOTH sides of every message:
 ```js
-// sender side
-console.log('Sending:', message);
-chrome.runtime.sendMessage(message, r => console.log('Response:', r));
+// Observation
+new MutationObserver(callback)
+observer.observe(element, { childList, subtree, attributes, attributeFilter })
 
-// receiver side
-chrome.runtime.onMessage.addListener((msg, sender, resp) => {
-  console.log('Received:', msg);
-});
+// DOM query
+document.querySelector(selector)
+document.querySelectorAll(selector)
+element.getAttribute('aria-label')
+element.textContent
+
+// Events
+window.addEventListener('__stupefy_cmd', handler)
+window.dispatchEvent(new CustomEvent('name', { detail: {...} }))
+
+// Navigation
+history.pushState        // monkey-patched to detect SPA navigation
+window.addEventListener('popstate', cb)   // back/forward buttons
+window.location.pathname // current URL path
 ```
 
 ---
 
-## Part 5 — Debugging Tips
+## 8. Common Gotchas and Edge Cases
 
-### View content script logs
-DevTools → **Console** → Change "top" dropdown to your extension's content script context.
-Or: filter by `[Stupefy!]` prefix.
+### 1. Spotify uses video for audio
+Spotify uses Encrypted Media Extensions (EME/Widevine) which requires a video element even for audio-only playback. Always query 'video, audio' — not just 'audio'.
 
-### View service worker logs
-`chrome://extensions` → find Stupefy! → click **"Service Worker"** link → opens a DevTools for the background context.
+### 2. Extension context invalidation
+When you reload the extension during development, the old content script keeps running with a dead chrome.runtime. Always wrap chrome.* calls with isContextValid() or try/catch.
 
-### Inspect chrome.storage
-In ANY extension context's DevTools console:
-```js
-chrome.storage.local.get(null, console.log); // dumps everything
-chrome.storage.local.clear();                 // reset all stored data
-```
+### 3. Async sendResponse requires return true
+If your onMessage handler needs async work before calling sendResponse, you MUST return true to keep the message channel open. Otherwise Chrome closes it and your response is dropped.
 
-### Reload the extension after code changes
-`chrome://extensions` → click the refresh icon (↻) next to Stupefy!.
-Then **refresh the Spotify tab** (content scripts don't auto-reload).
+### 4. Popup is recreated every time
+The popup opens fresh on every click. Never store anything in popup module-level variables — always read from chrome.storage.local on open.
 
-### The most common mistakes
-| Mistake | Fix |
-|---|---|
-| Content script changes not working | Reload extension + reload Spotify tab |
-| `sendResponse` not received | Check `return true` in async listeners |
-| Badge not updating | Check service worker is not asleep (open its DevTools) |
-| Storage empty on popup open | Check `chrome.storage.local.get()` call is awaited |
-| MutationObserver fires too much | Add `attributeFilter` or increase debounce delay |
+### 5. Background worker sleeps after 30s
+The MV3 service worker is ephemeral. Module-level variables reset every time it wakes up. All persistent state goes in chrome.storage.local.
 
----
+### 6. The reload cooldown prevents infinite loops
+tryReloadSkip() reloads the page as a last resort. Without a cooldown, it could loop: page reloads -> extension re-injects -> ad still detected -> reloads again. The _reloadSkipTime is persisted in storage to survive across reloads.
 
-## Part 6 — Going Further
+### 7. Debounce is critical with MutationObserver
+A single ad starting can trigger dozens of DOM mutations (React re-renders). Without debouncing onDomChange, you'd click skip 30 times, send 30 AD_HANDLED messages, and show 30 toasts.
 
-Once you understand this project, here's how to go deeper:
+### 8. Speed enforcement requires a loop
+Spotify's own JavaScript resets playbackRate = 1 periodically. The 50ms enforcer interval in inject.js wins the race by re-applying playbackRate = 16 faster than Spotify can reset it.
 
-### Extension Concepts
-- **`chrome.storage.sync`** — syncs storage across the user's Chrome devices (vs `.local` which is device-only)
-- **`chrome.notifications`** — system-level toast notifications (outside the browser tab)
-- **`chrome.contextMenus`** — add right-click menu items
-- **`chrome.declarativeNetRequest`** — block network requests (the proper ad-blocker API in MV3)
-
-### JavaScript Concepts Used Here
-- **Closures** — the IIFE pattern in `UIOverlay`
-- **Optional chaining (`?.`)** — safe DOM querying
-- **Rest parameters (`...args`)** — the log wrapper
-- **Async/await** — `init()`, `popup.js` handlers
-- **Monkey-patching** — `history.pushState` override
-
-### Further Reading
-- [Chrome Extension Docs](https://developer.chrome.com/docs/extensions/)
-- [MV3 Migration Guide](https://developer.chrome.com/docs/extensions/mv3/intro/)
-- [MutationObserver MDN](https://developer.mozilla.org/en-US/docs/Web/API/MutationObserver)
-- [HTMLMediaElement MDN](https://developer.mozilla.org/en-US/docs/Web/API/HTMLMediaElement)
-- [chrome.storage API](https://developer.chrome.com/docs/extensions/reference/storage/)
+### 9. SPA navigation can leave state stuck
+Spotify is a React SPA. Navigating pages does not reload the content script. handleSpaNavigation() resets adIsPlaying proactively on navigation.
 
 ---
 
-*This guide accompanies the Stupefy! source code. Read the source comments alongside this document for the full learning experience.*
+## 9. How to Rebuild This From Scratch
+
+### Step 1: Project skeleton
+Create folder structure and manifest.json. Test that Chrome can load it as an unpacked extension.
+
+### Step 2: Basic content script
+Add src/content.js with a simple console.log. Verify it appears in the browser console on open.spotify.com.
+
+### Step 3: Ad detection
+Implement DetectionModule.detectAd() with Signal 1 (aria-label). Add a setInterval polling loop.
+
+### Step 4: Simple mute reaction
+Add ReactionModule.tryMuteViaUI() and call it when an ad is detected. Verify you cannot hear ads.
+
+### Step 5: Toast notification
+Implement UIOverlay.showToast(). Inject the CSS style and the toast div.
+
+### Step 6: State tracking (onAdStart / onAdEnd)
+Add the adIsPlaying boolean. Call onAdStart() and onAdEnd() on state transitions. Add revert logic.
+
+### Step 7: Debounce
+Wrap onDomChange in the debounce() function. Observe how it smooths out rapid-fire triggers.
+
+### Step 8: MutationObserver
+Add startObserver() alongside the interval. Now you get both instant response and a polling fallback.
+
+### Step 9: Background service worker
+Create src/background.js. Add chrome.runtime.onInstalled, the message handler, and handleAdHandled() with badge updates.
+
+### Step 10: Stats tracking
+Add StatsTracker.increment() in content.js. Wire up the AD_HANDLED message to the background.
+
+### Step 11: Popup UI
+Create popup.html, popup.css, and popup.js. Show the daily stats count. Wire up the enable/disable toggle.
+
+### Step 12: Mode select
+Add the mode dropdown to the popup. Implement SET_MODE message handling in content.js. Update ReactionModule.react() to respect state.mode.
+
+### Step 13: inject.js — Main world injection
+Add inject.js to manifest.json with "world": "MAIN". Implement prototype patching of HTMLMediaElement.prototype.play.
+
+### Step 14: Speed-up via inject
+Implement the __stupefy_cmd event listener in inject.js. Add trySpeedUpViaInject() in content.js.
+
+### Step 15: Speed enforcer loop
+Add the 50ms setInterval enforcer in inject.js to fight Spotify rate resets.
+
+### Step 16: Revert logic
+Implement the revert command in inject.js and ReactionModule.revert() in content.js.
+
+### Step 17: Skip button click
+Add tryClickSkip() with multiple CSS selector fallbacks. Put it at the top of the fallback chain.
+
+### Step 18: Reload skip (safety net)
+Add tryReloadSkip() with a 5-second cooldown. Persist _reloadSkipTime in storage to survive the reload.
+
+### Step 19: SPA navigation handler
+Add handleSpaNavigation(). Patch history.pushState and listen for popstate.
+
+### Step 20: Extension context validation
+Add isContextValid() and safeSendMessage(). Guard all chrome.* calls in the content script.
+
+### Step 21: Onboarding page
+Create src/onboard/onboard.html and .css. Open it via chrome.tabs.create() on first install.
+
+---
+
+## Congratulations!
+
+You now understand every line of Stupefy! — from manifest declarations to monkey-patching browser prototypes to fighting an SPA navigation model.
+
+**Key takeaways:**
+- Chrome extensions have two isolated JavaScript worlds that communicate via CustomEvent
+- MV3 service workers are ephemeral — use chrome.storage.local for persistence
+- Prototype patching lets you intercept ALL instances of an object, past and future
+- Debouncing is critical when using MutationObserver to prevent burst-firing
+- Robust systems use fallback chains — try best, degrade gracefully
+
+**Next things to explore:**
+- Adding chrome.storage.sync to sync settings across devices
+- Using chrome.declarativeNetRequest for network-level ad blocking (MV3 way)
+- Building an options page with detailed stats graphs
+- Adding Spotify Desktop support via native messaging
+
+---
+
+*Built with love as a learning project. Inspired by https://github.com/clairefro/blockify*
