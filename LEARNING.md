@@ -1,8 +1,7 @@
 ﻿# 📚 LEARNING.md — Stupefy! Chrome Extension Deep-Dive
 
-> **What is this?**
 >**This is Fully AI genarated(Its saying by human, yeah me, Nimsara), I built this cause I want people to understand the code, not just fork and vibe code netire thing
-
+> **What is this?**
 > A complete, beginner-to-advanced guide for understanding **every file, every concept, and every design decision** in the Stupefy! Chrome extension. Read this before diving into the source code.
 
 ---
