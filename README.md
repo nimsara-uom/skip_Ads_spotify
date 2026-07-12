@@ -89,6 +89,5 @@ open.spotify.com tab
 
 ---
 
-## This is inspired by 
-- **https://github.com/clairefro/blockify
-- Huge thanks to **clairefro**
+## Inspired by
+- [blockify](https://github.com/clairefro/blockify) — Huge thanks to **clairefro**.
