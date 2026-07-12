@@ -11,7 +11,7 @@
 
 ---
 
-## ⚠️ ToS Notice
+##  ToS Notice
 
 Spotify's Terms of Service prohibit ad-blocking tools. **This project is built purely for educational purposes** — to learn Chrome extension development, DOM observation, and browser APIs. Use it responsibly and at your own risk.
 
@@ -58,14 +58,14 @@ open.spotify.com tab
 
 ## Features
 
-- ⚡ **Auto-skip** skippable ads via simulated button click.
-- ⏩ **Speed-up** non-skippable ads to 16x (finishes in ~1.5s).
-- 🔇 **Mute** fallback if audio element is inaccessible.
-- 🔄 **Auto-revert** — restores playback the instant the ad ends.
-- 📊 **Daily stats** — count visible on extension badge.
-- 🎛️ **Mode select** — Auto / Speed / Mute-only.
-- 🔔 **Toast notification** — visual confirmation of ad handling.
-- 🎉 **Onboarding page** — shown on first install.
+-  **Auto-skip** skippable ads via simulated button click.
+-  **Speed-up** non-skippable ads to 16x (finishes in ~1.5s).
+-  **Mute** fallback if audio element is inaccessible.
+-  **Auto-revert** — restores playback the instant the ad ends.
+-  **Daily stats** — count visible on extension badge.
+-  **Mode select** — Auto / Speed / Mute-only.
+-  **Toast notification** — visual confirmation of ad handling.
+-  **Onboarding page** — shown on first install.
 
 ---
 
