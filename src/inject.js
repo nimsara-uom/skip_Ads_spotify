@@ -1,35 +1,4 @@
-// ============================================================
-// inject.js — Stupefy! Main-World Injection
-// ============================================================
-//
-// LESSON: The Two Worlds of Chrome Extensions
-//
-// Chrome content scripts run in an "isolated world":
-//   - They CAN read/modify the page's DOM
-//   - They CANNOT access the page's JavaScript variables
-//
-// Spotify creates its audio via `new Audio()` or a <video>
-// element in its OWN JavaScript context. These elements are
-// never appended to the DOM, so document.querySelector()
-// can't find them from the content script.
-//
-// Solution: This file is registered in manifest.json with
-// "world": "MAIN" — it runs inside Spotify's own JS context,
-// BEFORE Spotify's code loads (run_at: document_start).
-//
-// We monkey-patch HTMLMediaElement.prototype.play() to capture
-// every media element the moment Spotify calls .play() on it.
-// Then the content script can tell us to speed up or mute
-// those elements via CustomEvent messages.
-//
-// LESSON: Monkey-patching prototype methods
-//   Every <audio> and <video> element inherits from
-//   HTMLMediaElement. By overriding .play() on the prototype,
-//   we intercept ALL media playback — past and future elements.
-//   We save the original function and call it normally, so
-//   Spotify works exactly as before. We just get a reference
-//   to the element for later manipulation.
-// ============================================================
+
 
 (function () {
   'use strict';
@@ -37,28 +6,17 @@
   const PREFIX = '[Stupefy! inject]';
   const log = (...args) => console.log(PREFIX, ...args);
 
-  // ── Storage for captured media elements ──────────────────────
+
   // WeakSet wouldn't let us iterate, so we use a Set.
-  // We clear dead references periodically to avoid leaks.
+  // -clear dead references periodically to avoid leaks.
   const capturedMedia = new Set();
 
-  // ── Speed enforcer state ────────────────────────────────────
+  //Speed enforcer state
   let enforcerInterval = null;
   let isSpedUp = false;
   const SPEED_RATE = 16;  // 16x = 30s ad → ~1.9s
   const ENFORCER_INTERVAL = 50; // ms between enforcement checks
 
-  // ============================================================
-  // Monkey-patch: HTMLMediaElement.prototype.play
-  // ============================================================
-  //
-  // LESSON: Function.prototype.apply
-  //   When we override a method, we must call the ORIGINAL
-  //   implementation to keep things working. We use:
-  //     originalFn.apply(this, arguments)
-  //   `this` = the media element that called .play()
-  //   `arguments` = any arguments passed to .play()
-  //   This preserves the exact behavior as if we weren't here.
 
   const originalPlay = HTMLMediaElement.prototype.play;
 
@@ -84,7 +42,7 @@
     return originalPlay.apply(this, arguments);
   };
 
-  // Also patch the Audio constructor for `new Audio(url)` usage
+  // patch the Audio constructor for `new Audio(url)` usage
   const OriginalAudio = window.Audio;
   window.Audio = function (...args) {
     const audioEl = new OriginalAudio(...args);
@@ -95,15 +53,11 @@
   // Preserve prototype chain
   window.Audio.prototype = OriginalAudio.prototype;
 
-  // ============================================================
-  // Speed Enforcer
-  // ============================================================
-  //
-  // LESSON: Why enforcement is necessary
-  //   Spotify's own JS periodically sets playbackRate = 1 on
-  //   its media elements. We fight back by re-applying our
-  //   desired rate every 50ms. At this speed, the user never
-  //   hears normal-speed ad audio — our override wins the race.
+  //Speed Enforcer
+  // Spotify's own JS periodically sets playbackRate = 1 on
+  // its media elements. We fight back by re-applying our
+  // desired rate every 50ms. At this speed, the user never
+  // hears normal-speed ad audio our override wins the race.
 
   function startEnforcer() {
     if (enforcerInterval) return; // Already running
@@ -142,21 +96,11 @@
     }
   }
 
-  // ============================================================
-  // Communication: Content Script ↔ Main World
-  // ============================================================
-  //
-  // LESSON: CustomEvent for cross-world communication
-  //   Content scripts and main-world scripts share the same DOM.
-  //   They can communicate via CustomEvent on the `window` object.
-  //
-  //   Content script → Main world:
-  //     window.dispatchEvent(new CustomEvent('__stupefy_cmd', { detail: { action: 'speedup' } }));
-  //
-  //   Main world → Content script:
-  //     window.dispatchEvent(new CustomEvent('__stupefy_status', { detail: { ... } }));
-  //
-  //   This is the standard, clean way to bridge the two worlds.
+  //Communication: Content Script ↔ Main World
+  // Content script → Main world:
+  // window.dispatchEvent(new CustomEvent('__stupefy_cmd', { detail: { action: 'speedup' } }));
+  // Main world → Content script:
+  // window.dispatchEvent(new CustomEvent('__stupefy_status', { detail: { ... } }));
 
   window.addEventListener('__stupefy_cmd', (e) => {
     const action = e.detail?.action;
@@ -205,7 +149,7 @@
           try {
             el.muted = true;
             el.volume = 0;
-          } catch (err) {}
+          } catch (err) { }
         });
         window.dispatchEvent(new CustomEvent('__stupefy_status', {
           detail: { ok: true, action: 'mute', elements: capturedMedia.size }
@@ -217,7 +161,7 @@
           try {
             el.muted = false;
             el.volume = 1;
-          } catch (err) {}
+          } catch (err) { }
         });
         window.dispatchEvent(new CustomEvent('__stupefy_status', {
           detail: { ok: true, action: 'unmute' }
@@ -238,7 +182,7 @@
               duration: el.duration,
               currentTime: el.currentTime,
             });
-          } catch (e) {}
+          } catch (e) { }
         });
         window.dispatchEvent(new CustomEvent('__stupefy_status', {
           detail: { action: 'status', isSpedUp, elements: info }
@@ -247,5 +191,5 @@
     }
   });
 
-  log('✅ Main-world injection complete. Waiting for media elements...');
+  log(' Main-world injection complete. Waiting for media elements...');
 })();

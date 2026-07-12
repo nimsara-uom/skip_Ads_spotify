@@ -21,9 +21,9 @@
 'use strict';
 
 // DOM element references
-const toggleEl    = document.getElementById('enabled-toggle');
-const statsEl     = document.getElementById('stats-count');
-const modeEl      = document.getElementById('mode-select');
+const toggleEl = document.getElementById('enabled-toggle');
+const statsEl = document.getElementById('stats-count');
+const modeEl = document.getElementById('mode-select');
 
 // ── Load current state when popup opens ──────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
@@ -32,9 +32,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const data = await sendToBackground({ type: 'GET_STATS' });
 
   if (data) {
-    toggleEl.checked  = data.enabled !== false; // default true
+    toggleEl.checked = data.enabled !== false; // default true
     statsEl.textContent = data.statsToday ?? 0;
-    modeEl.value       = data.mode ?? 'auto';
+    modeEl.value = data.mode ?? 'auto';
   }
 });
 
@@ -76,7 +76,6 @@ function sendToBackground(message) {
 
 
 // ── Helper: send a message to content.js in the active tab ───
-// LESSON: We must use chrome.tabs.sendMessage (not runtime.sendMessage)
 // to reach a content script. We get the active tab's ID first.
 function sendToContentScript(message) {
   return new Promise((resolve) => {

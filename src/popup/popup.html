@@ -1,17 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <!--
-    LESSON: Extension CSP
-    Chrome MV3 forbids inline scripts in extension pages for security.
-    <script>alert('hi')</script>  ← NOT ALLOWED
-    You must always use an external .js file via src="".
-  -->
+
   <title>Stupefy!</title>
   <link rel="stylesheet" href="popup.css" />
 </head>
+
 <body>
   <div class="header">
     <img src="../../icons/icon48.png" alt="Stupefy! icon" class="logo" />
@@ -46,10 +43,8 @@
     </select>
   </div>
 
-  <!--
-    LESSON: No inline JS allowed — must use external file
-    The script loads AFTER the HTML so it can find DOM elements.
-  -->
+
   <script src="popup.js"></script>
 </body>
+
 </html>
