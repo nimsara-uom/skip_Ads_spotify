@@ -198,7 +198,7 @@ tryReloadSkip()        -> Nuclear option: page reload
 
 **Badge update:** Shows the number of ads handled today on the extension icon. Max ~4 visible characters.
 
-**Daily counter reset:** Compares today's date string. If a new day, resets statsToday to 1.
+
 
 ---
 
