@@ -25,7 +25,7 @@ chrome.runtime.onInstalled.addListener((details) => {
     });
     console.log(LOG, 'Default settings initialized');
 
-    /
+
     // It converts a relative extension path to a full chrome-extension:// URL.
     const onboardUrl = chrome.runtime.getURL('src/onboard/onboard.html');
     chrome.tabs.create({ url: onboardUrl });
