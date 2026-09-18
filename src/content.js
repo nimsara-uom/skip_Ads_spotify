@@ -43,23 +43,58 @@ function safeSendMessage(msg, callback) {
 // Returns true if an ad is currently playing.
 // Uses multiple DOM signals in priority order.
 
+// Localized ad strings for i18n support (covers 15+ languages)
+const AD_STRINGS = [
+  'advertisement',     // English
+  'anuncio',           // Spanish
+  'publicité',         // French
+  'werbung',           // German
+  'pubblicità',        // Italian
+  'reclame',           // Dutch
+  'anúncio',           // Portuguese
+  'reklam',            // Turkish / Swedish
+  'reklama',           // Polish / Czech
+  'реклама',           // Russian / Ukrainian
+  'reklame',           // Danish / Norwegian
+  'mainos',            // Finnish
+  '広告',              // Japanese
+  '광고',              // Korean
+  '广告',              // Chinese (Simplified)
+  '廣告',              // Chinese (Traditional)
+  'โฆษณา',             // Thai
+  'iklan',             // Indonesian / Malay
+  'विज्ञापन',            // Hindi
+];
+
+function isAdText(text) {
+  if (!text) return false;
+  const lower = text.toLowerCase().trim();
+  return AD_STRINGS.some(adStr => lower.includes(adStr));
+}
+
 const DetectionModule = {
 
   detectAd() {
-    // Signal 1: aria-label (most stable)
+    // Signal 1: aria-label (most stable, now i18n-aware)
     const widget = document.querySelector('[data-testid="now-playing-widget"]');
-    if (widget?.getAttribute('aria-label') === 'Advertisement') {
+    if (isAdText(widget?.getAttribute('aria-label'))) {
       return true;
     }
 
-    // Signal 2: subtitle text
+    // Signal 2: subtitle text (i18n-aware)
     const subtitle = document.querySelector('[data-testid="context-item-info-subtitles"]');
-    if (subtitle?.textContent?.includes('Advertisement')) {
+    if (isAdText(subtitle?.textContent)) {
       return true;
     }
 
-    // Signal 3: page title (least reliable)
-    if (document.title.startsWith('Advertisement')) {
+    // Signal 3: page title (i18n-aware, least reliable)
+    if (isAdText(document.title)) {
+      return true;
+    }
+
+    // Signal 4: Spotify sometimes adds a special ad container
+    const adSlot = document.querySelector('[data-testid="ad-slot"], [class*="ad-slot"]');
+    if (adSlot) {
       return true;
     }
 
@@ -106,6 +141,7 @@ const ReactionModule = {
       }
       else {
         if (this.tryClickSkip()) { this._activeAction = 'skip'; succeeded = true; }
+        else if (this.trySeekViaInject()) { this._activeAction = 'inject-seek'; succeeded = true; }
         else if (this.trySpeedUpViaInject()) { this._activeAction = 'inject-speed'; succeeded = true; }
         else if (this.tryMuteViaInject()) { this._activeAction = 'inject-mute'; succeeded = true; }
         else if (this.tryMuteViaUI()) { this._activeAction = 'uimute'; succeeded = true; }
@@ -155,6 +191,40 @@ const ReactionModule = {
     return true;
   },
 
+
+  // ── Instant Seek: jump to end of the ad ─────────────────────
+  // This is the fastest possible skip — seeks to the last 0.1s
+  // of the ad, so Spotify thinks it played fully. Falls back to
+  // 16x speed-up if seeking fails or no elements are found.
+  trySeekViaInject() {
+    log('trySeekViaInject: sending seek command to inject.js...');
+
+    let seekWorked = false;
+    const handler = (e) => {
+      if (e.detail?.action === 'seek') {
+        seekWorked = e.detail.seeked > 0;
+        log(`trySeekViaInject: inject.js responded — ${e.detail.seeked}/${e.detail.total} elements seeked`);
+        if (!seekWorked) {
+          warn('trySeekViaInject: no elements could be seeked (duration unknown or 0 elements)');
+        }
+      }
+    };
+    window.addEventListener('__stupefy_status', handler, { once: true });
+
+    window.dispatchEvent(new CustomEvent('__stupefy_cmd', {
+      detail: { action: 'seek' }
+    }));
+
+    // Clean up listener after a short delay
+    setTimeout(() => window.removeEventListener('__stupefy_status', handler), 150);
+
+    // We always return true here because the event is dispatched.
+    // If it didn't actually seek, the ad-end detection will still
+    // notice the ad is playing and the next poll will retry with
+    // speed-up as fallback.
+    log('✅ trySeekViaInject: seek command dispatched');
+    return true;
+  },
 
   trySpeedUpViaInject() {
     log('trySpeedUpViaInject: sending speedup command to inject.js...');
@@ -244,6 +314,15 @@ const ReactionModule = {
     log(`Reverting action: ${this._activeAction}`);
 
     switch (this._activeAction) {
+      case 'inject-seek':
+        // Seek is a one-shot action, nothing to revert.
+        // But we send revert just in case inject.js muted during seek.
+        window.dispatchEvent(new CustomEvent('__stupefy_cmd', {
+          detail: { action: 'revert' }
+        }));
+        log('Reverted: sent revert after seek');
+        break;
+
       case 'inject-speed':
         window.dispatchEvent(new CustomEvent('__stupefy_cmd', {
           detail: { action: 'revert' }
