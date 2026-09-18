@@ -1,58 +1,94 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Welcome to Stupefy!</title>
   <link rel="stylesheet" href="onboard.css" />
 </head>
+
 <body>
+
+  <!-- Animated ambient background -->
+  <div class="bg-orbs" aria-hidden="true">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+
   <div class="card">
+
+    <!-- Hero -->
     <div class="hero">
-      <img src="../../icons/icon128.png" alt="Stupefy! logo" class="logo" />
-      <h1>Welcome to Stupefy! ⚡</h1>
-      <p class="tagline">Your Spotify ad handler is ready.</p>
+      <div class="logo-ring">
+        <img src="../../icons/icon128.png" alt="Stupefy! logo" class="logo" />
+      </div>
+      <h1>Welcome to <span class="grad">Stupefy!</span> ⚡</h1>
+      <p class="tagline">Your Spotify ad handler is ready to go.</p>
     </div>
 
+    <!-- Steps -->
     <div class="steps">
-      <div class="step">
-        <span class="step-icon">1️⃣</span>
-        <div>
+      <div class="step" style="--i:1">
+        <div class="step-icon-wrap">🌐</div>
+        <div class="step-body">
           <strong>Open Spotify Web Player</strong>
           <p>Navigate to <a href="https://open.spotify.com" target="_blank">open.spotify.com</a></p>
         </div>
       </div>
-      <div class="step">
-        <span class="step-icon">2️⃣</span>
-        <div>
+
+      <div class="step" style="--i:2">
+        <div class="step-icon-wrap">🎵</div>
+        <div class="step-body">
           <strong>Play music on a free account</strong>
-          <p>Stupefy! activates automatically when an ad is detected.</p>
+          <p>Stupefy! activates automatically the moment an ad is detected.</p>
         </div>
       </div>
-      <div class="step">
-        <span class="step-icon">3️⃣</span>
-        <div>
-          <strong>Watch the toast notification</strong>
-          <p>A "<strong>⚡ Ad handled in Xs</strong>" message confirms it worked.</p>
+
+      <div class="step" style="--i:3">
+        <div class="step-icon-wrap">⚡</div>
+        <div class="step-body">
+          <strong>Ad handled in seconds</strong>
+          <p>Skip → 16× speed-up → mute chain fires instantly.</p>
         </div>
       </div>
-      <div class="step">
-        <span class="step-icon">⚙️</span>
-        <div>
-          <strong>Customize in the popup</strong>
-          <p>Click the extension icon to change mode or view stats.</p>
+
+      <div class="step" style="--i:4">
+        <div class="step-icon-wrap">⚙️</div>
+        <div class="step-body">
+          <strong>Customize via the popup</strong>
+          <p>Click the extension icon to switch modes or check stats.</p>
         </div>
       </div>
     </div>
 
-    <div class="notice">
-      <strong>⚠️ Educational Project Notice</strong><br/>
+    <!-- Toast preview -->
+    <div class="toast-preview" style="--i:5">
+      <p class="preview-label">What you'll see on Spotify</p>
+      <div class="mock-toast">
+        <span class="mock-dot"></span>
+        <span>⚡ Ad detected — handling…</span>
+      </div>
+    </div>
+
+    <!-- Notice -->
+    <div class="notice" style="--i:6">
+      <strong>📚 Educational Project</strong><br />
       Stupefy! is built for learning Chrome extension development.
-      Spotify's Terms of Service prohibit ad-blocking. Use responsibly.
+      Spotify's ToS prohibits ad-blocking. Use responsibly.
     </div>
 
-    <a href="https://open.spotify.com" target="_blank" class="cta">
-      Open Spotify →
+    <!-- CTA -->
+    <a href="https://open.spotify.com" target="_blank" class="cta" style="--i:7">
+      <span>Open Spotify</span>
+      <svg width="16" height="16" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+        <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"
+              stroke-width="2.5" d="M5 12h14M13 6l6 6-6 6"/>
+      </svg>
     </a>
+
   </div>
+
 </body>
 </html>
