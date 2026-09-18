@@ -1,12 +1,18 @@
+/* ============================================================
+   onboard.css — Stupefy! Premium Onboarding Page
+   ============================================================ */
+
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 :root {
-  --green:   #1DB954;
-  --dark:    #0d0d0d;
-  --surface: #1a1a1a;
-  --border:  #2a2a2a;
-  --text:    #ffffff;
-  --muted:   #a7a7a7;
+  --green:     #1ed760;
+  --green-dim: #1DB954;
+  --dark:      #070707;
+  --surface:   #111111;
+  --surface2:  #191919;
+  --border:    rgba(255, 255, 255, 0.07);
+  --text:      #ffffff;
+  --muted:     #888888;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -20,33 +26,125 @@ body {
   align-items: center;
   justify-content: center;
   padding: 24px;
+  overflow-x: hidden;
 }
 
+/* ── Ambient orb background ─────────────────────────────────── */
+.bg-orbs {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.14;
+}
+
+.orb-1 {
+  width: 500px; height: 500px;
+  background: var(--green-dim);
+  top: -160px; left: -160px;
+  animation: drift1 9s ease-in-out infinite alternate;
+}
+
+.orb-2 {
+  width: 380px; height: 380px;
+  background: #007cf0;
+  bottom: -120px; right: -120px;
+  animation: drift2 11s ease-in-out infinite alternate;
+}
+
+.orb-3 {
+  width: 250px; height: 250px;
+  background: var(--green);
+  top: 50%; left: 60%;
+  transform: translate(-50%, -50%);
+  animation: drift3 7s ease-in-out infinite alternate;
+  opacity: 0.08;
+}
+
+@keyframes drift1 {
+  from { transform: translate(0, 0);    }
+  to   { transform: translate(40px, 30px); }
+}
+@keyframes drift2 {
+  from { transform: translate(0, 0);    }
+  to   { transform: translate(-30px, -20px); }
+}
+@keyframes drift3 {
+  from { transform: translate(-50%, -50%); }
+  to   { transform: translate(calc(-50% + 25px), calc(-50% + 20px)); }
+}
+
+/* ── Card ───────────────────────────────────────────────────── */
 .card {
-  background: var(--surface);
+  position: relative;
+  z-index: 1;
+  background: rgba(13, 13, 13, 0.82);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   border: 1px solid var(--border);
-  border-radius: 20px;
-  max-width: 520px;
+  border-radius: 24px;
+  max-width: 530px;
   width: 100%;
   padding: 40px;
+  box-shadow:
+    0 24px 64px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(255, 255, 255, 0.035),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  animation: cardIn 0.65s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(28px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
+}
+
+/* ── Hero ───────────────────────────────────────────────────── */
 .hero {
   text-align: center;
-  margin-bottom: 36px;
+  margin-bottom: 32px;
+}
+
+.logo-ring {
+  display: inline-block;
+  padding: 5px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--green-dim), #007cf0);
+  margin-bottom: 18px;
+  box-shadow: 0 0 36px rgba(29, 185, 84, 0.35);
+  animation: ringPulse 3s ease-in-out infinite;
+}
+
+@keyframes ringPulse {
+  0%, 100% { box-shadow: 0 0 36px rgba(29, 185, 84, 0.35); }
+  50%       { box-shadow: 0 0 52px rgba(29, 185, 84, 0.55); }
 }
 
 .logo {
-  width: 80px;
-  height: 80px;
+  width: 84px;
+  height: 84px;
   border-radius: 50%;
-  margin-bottom: 16px;
+  display: block;
 }
 
 h1 {
-  font-size: 24px;
+  font-size: 27px;
   font-weight: 700;
-  margin-bottom: 8px;
+  letter-spacing: -0.5px;
+  margin-bottom: 10px;
+}
+
+.grad {
+  background: linear-gradient(125deg, var(--green) 20%, #00d4ff);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .tagline {
@@ -54,48 +152,154 @@ h1 {
   font-size: 15px;
 }
 
-/* Steps */
-.steps { display: flex; flex-direction: column; gap: 16px; margin-bottom: 28px; }
+/* ── Steps ──────────────────────────────────────────────────── */
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+/* Staggered slide-in using CSS custom property --i */
+.step, .toast-preview, .notice, .cta {
+  animation: slideIn 0.55s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--i, 1) * 0.08s + 0.3s);
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-18px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
 
 .step {
   display: flex;
   gap: 14px;
   align-items: flex-start;
-  background: #222;
-  border-radius: 12px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
   padding: 14px 16px;
+  transition: border-color 0.2s, background 0.2s;
 }
 
-.step-icon { font-size: 20px; flex-shrink: 0; margin-top: 2px; }
+.step:hover {
+  border-color: rgba(255,255,255,0.12);
+  background: #1f1f1f;
+}
 
-.step strong { display: block; font-size: 14px; margin-bottom: 4px; }
-.step p { font-size: 13px; color: var(--muted); line-height: 1.5; }
-.step a { color: var(--green); text-decoration: none; }
-.step a:hover { text-decoration: underline; }
-
-/* Notice */
-.notice {
-  background: rgba(255, 200, 0, 0.08);
-  border: 1px solid rgba(255, 200, 0, 0.2);
+.step-icon-wrap {
+  width: 38px;
+  height: 38px;
   border-radius: 10px;
-  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 19px;
+  flex-shrink: 0;
+}
+
+.step-body strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.step-body p {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.step-body a {
+  color: var(--green);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.step-body a:hover { text-decoration: underline; }
+
+/* ── Toast Preview ──────────────────────────────────────────── */
+.toast-preview {
+  margin-bottom: 16px;
+}
+
+.preview-label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+  font-weight: 500;
+}
+
+.mock-toast {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: rgba(20, 20, 20, 0.9);
+  border: 1px solid var(--green-dim);
+  border-radius: 100px;
+  padding: 10px 20px;
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45), 0 0 12px rgba(29,185,84,0.12);
+  backdrop-filter: blur(8px);
+}
+
+.mock-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green);
+  animation: dotBlink 1.4s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes dotBlink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.25; }
+}
+
+/* ── Notice ─────────────────────────────────────────────────── */
+.notice {
+  background: rgba(255, 200, 0, 0.055);
+  border: 1px solid rgba(255, 200, 0, 0.18);
+  border-radius: 12px;
+  padding: 14px 18px;
   font-size: 13px;
   color: #e8d48a;
-  line-height: 1.6;
-  margin-bottom: 24px;
+  line-height: 1.65;
+  margin-bottom: 20px;
 }
 
-/* CTA */
+/* ── CTA Button ─────────────────────────────────────────────── */
 .cta {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   background: var(--green);
   color: #000;
-  font-weight: 600;
+  font-weight: 700;
   font-size: 15px;
-  text-align: center;
-  padding: 14px;
+  padding: 15px;
   border-radius: 100px;
   text-decoration: none;
-  transition: opacity 0.2s;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, opacity 0.2s;
+  box-shadow: 0 4px 20px rgba(30, 215, 96, 0.2);
 }
-.cta:hover { opacity: 0.85; }
+
+.cta:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 36px rgba(30, 215, 96, 0.45);
+  opacity: 0.95;
+}
+
+.cta:active {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(30, 215, 96, 0.3);
+}
