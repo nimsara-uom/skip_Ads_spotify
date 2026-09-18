@@ -124,6 +124,8 @@
         window.dispatchEvent(new CustomEvent('__stupefy_status', {
           detail: { ok: true, action: 'speedup', elements: capturedMedia.size }
         }));
+        break;
+
       case 'seek':
         // Instant skip: jump to the very end of the ad.
         // We mute during seek to prevent any audio blip.
