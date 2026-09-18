@@ -4,45 +4,69 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
   <title>Stupefy!</title>
   <link rel="stylesheet" href="popup.css" />
 </head>
 
 <body>
+
+  <!-- ── Header ── -->
   <div class="header">
-    <img src="../../icons/icon48.png" alt="Stupefy! icon" class="logo" />
-    <div>
-      <h1 class="title">Stupefy!</h1>
-      <p class="subtitle">Spotify Ad Handler</p>
+    <div class="header-left">
+      <div class="logo-wrap">
+        <img src="../../icons/icon48.png" alt="Stupefy! icon" class="logo" />
+        <span class="logo-pulse"></span>
+      </div>
+      <div>
+        <h1 class="title">Stupefy!</h1>
+        <p class="subtitle">Spotify Ad Handler</p>
+      </div>
+    </div>
+    <label class="toggle" id="toggle-label" title="Enable / disable">
+      <input type="checkbox" id="enabled-toggle" checked />
+      <span class="slider"></span>
+    </label>
+  </div>
+
+  <!-- ── Live Status Card ── -->
+  <div class="status-card" id="status-card">
+    <div class="status-dot" id="status-dot"></div>
+    <div class="status-text">
+      <span class="status-title" id="status-title">Ready</span>
+      <span class="status-sub"   id="status-sub">Watching for ads…</span>
+    </div>
+    <div class="status-badge" id="status-badge">Active</div>
+  </div>
+
+  <!-- ── Stats (Today + Total) ── -->
+  <div class="stats-row">
+    <div class="stat-box">
+      <p class="stat-num" id="stats-count">0</p>
+      <p class="stat-label">Today</p>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat-box">
+      <p class="stat-num" id="stats-total">0</p>
+      <p class="stat-label">All Time</p>
     </div>
   </div>
 
-  <div class="status-section">
-    <div class="status-row">
-      <span class="label">Status</span>
-      <!-- We'll wire this toggle in Commit 19 -->
-      <label class="toggle" id="toggle-label">
-        <input type="checkbox" id="enabled-toggle" checked />
-        <span class="slider"></span>
-      </label>
+  <!-- ── Mode Pills ── -->
+  <div class="section">
+    <p class="section-label">Ad Handling Mode</p>
+    <div class="mode-pills">
+      <button class="pill active" data-mode="auto"  id="mode-auto">⚡ Auto</button>
+      <button class="pill"        data-mode="mute"  id="mode-mute">🔇 Mute</button>
+      <button class="pill"        data-mode="speed" id="mode-speed">⏩ Speed</button>
     </div>
+    <p class="mode-hint" id="mode-hint">Skip → speed-up → mute fallback chain</p>
   </div>
 
-  <div class="stats-section">
-    <p class="stats-label">Ads handled today</p>
-    <p class="stats-count" id="stats-count">—</p>
+  <!-- ── Footer ── -->
+  <div class="footer">
+    <span class="version">v0.1.0</span>
+    <button class="footer-btn" id="open-spotify-btn">Open Spotify →</button>
   </div>
-
-  <div class="mode-section">
-    <p class="label">Mode</p>
-    <select id="mode-select">
-      <option value="auto">⚡ Auto (skip → speed → mute)</option>
-      <option value="mute">🔇 Mute only</option>
-      <option value="speed">⏩ Speed only</option>
-    </select>
-  </div>
-
 
   <script src="popup.js"></script>
 </body>
