@@ -8,8 +8,7 @@ const CONFIG = {
   RELOAD_COOLDOWN: 5000,  // Min ms between reloads (prevents infinite loop)
   LOG_PREFIX: '[Stupefy!]',
 };
-
-const DEBUG = true;
+const DEBUG = false;
 const log = (...args) => DEBUG && console.log(CONFIG.LOG_PREFIX, ...args);
 const warn = (...args) => console.warn(CONFIG.LOG_PREFIX, ...args);
 

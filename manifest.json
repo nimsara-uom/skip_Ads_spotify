@@ -2,7 +2,9 @@
   "manifest_version": 3,
   "name": "Stupefy!",
   "version": "0.1.0",
-  "description": "Detects Spotify Web Player ads and handles them via skip → speed-up → mute fallback chain.",
+  "description": "An educational project demonstrating media playback manipulation in the browser.",
+  "author": "Your Name",
+  "homepage_url": "https://github.com/yourusername/stupefy",
   "permissions": [
     "storage",
     "scripting",
@@ -10,6 +12,12 @@
   ],
   "host_permissions": [
     "*://open.spotify.com/*"
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["src/onboard/onboard.html", "src/onboard/onboard.css"],
+      "matches": ["*://open.spotify.com/*"]
+    }
   ],
   "background": {
     "service_worker": "src/background.js"

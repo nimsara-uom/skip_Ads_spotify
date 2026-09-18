@@ -1,4 +1,4 @@
-﻿# 📚 LEARNING.md — Stupefy! Chrome Extension Deep-Dive
+# 📚 LEARNING.md — Stupefy! Chrome Extension Deep-Dive
 
 >**This is Fully AI genarated(Its saying by human, yeah me, Nimsara), I built this cause I want people to understand the code, not just fork and vibe code netire thing
 > **What is this?**

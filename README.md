@@ -48,7 +48,7 @@ open.spotify.com tab
 
 ## Installation (Load Unpacked)
 
-1. Clone this repo: `git clone https://github.com/nimsara-uom/skip_Ads_spotify.git`
+1. Clone this repo: `git clone https://github.com/yourusername/stupefy.git`
 2. Open `chrome://extensions` in Chrome.
 3. Enable **Developer mode** (top-right).
 4. Click **Load unpacked** and select the project folder.
