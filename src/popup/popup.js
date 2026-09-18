@@ -1,71 +1,153 @@
 // ============================================================
-// popup.js — Popup Logic
+// popup.js — Stupefy! Premium Popup Logic
 // ============================================================
-// LESSON: Popup lifecycle
-//
-// The popup opens fresh EVERY time the user clicks the icon.
-// It is destroyed when it loses focus (user clicks elsewhere).
-// This means:
-//   - You cannot store state in module-level variables here
-//   - Always read state from chrome.storage.local on open
-//   - Always save changes back to chrome.storage.local
-//
-// LESSON: chrome.tabs.sendMessage
-//   To talk to content.js, the popup needs the current tab's ID:
-//   chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
-//     chrome.tabs.sendMessage(tab.id, { type: 'SET_ENABLED', value: true });
-//   });
-//   This is different from chrome.runtime.sendMessage (which goes to background).
+// Popup lifecycle reminder:
+//   - Re-opens fresh each time the user clicks the icon.
+//   - Always read state from chrome.storage, never local vars.
 // ============================================================
 
 'use strict';
 
-// DOM element references
-const toggleEl = document.getElementById('enabled-toggle');
-const statsEl = document.getElementById('stats-count');
-const modeEl = document.getElementById('mode-select');
+// ── DOM refs ─────────────────────────────────────────────────
+const toggleEl      = document.getElementById('enabled-toggle');
+const statsEl       = document.getElementById('stats-count');
+const statsTotalEl  = document.getElementById('stats-total');
+const statusCard    = document.getElementById('status-card');
+const statusTitle   = document.getElementById('status-title');
+const statusSub     = document.getElementById('status-sub');
+const statusBadge   = document.getElementById('status-badge');
+const pills         = document.querySelectorAll('.pill');
+const modeHint      = document.getElementById('mode-hint');
+const openSpotifyBtn = document.getElementById('open-spotify-btn');
 
-// ── Load current state when popup opens ──────────────────────
+let currentMode = 'auto';
+
+const MODE_HINTS = {
+  auto:  'Skip → speed-up → mute fallback chain',
+  mute:  'Audio is muted for the entire ad duration',
+  speed: 'Ad plays at 16× speed (near-instant)',
+};
+
+// ── Init: load state when popup opens ────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
 
-  // Read settings from background via message
+  // 1. Fetch stats + settings from background
   const data = await sendToBackground({ type: 'GET_STATS' });
 
   if (data) {
-    toggleEl.checked = data.enabled !== false; // default true
-    statsEl.textContent = data.statsToday ?? 0;
-    modeEl.value = data.mode ?? 'auto';
+    const enabled = data.enabled !== false;
+    toggleEl.checked = enabled;
+    currentMode = data.mode ?? 'auto';
+
+    // Animate counters from 0 → actual value
+    animateCount(statsEl,      0, data.statsToday  ?? 0);
+    animateCount(statsTotalEl, 0, data.statsTotal  ?? 0);
+
+    setActivePill(currentMode);
+    updateStatusUI(enabled);
+  }
+
+  // 2. Ping content script to see if an ad is currently playing
+  const ping = await sendToContentScript({ type: 'PING' });
+  if (ping?.adIsPlaying) {
+    setAdActiveUI(true);
   }
 });
 
 
-// ── Toggle: enable/disable the extension ─────────────────────
+// ── Toggle: enable / disable ──────────────────────────────────
 toggleEl.addEventListener('change', async () => {
   const enabled = toggleEl.checked;
-
-  // Save to storage (via background)
   await sendToBackground({ type: 'SET_SETTINGS', payload: { enabled } });
-
-  // Tell content.js in the current tab
   await sendToContentScript({ type: 'SET_ENABLED', value: enabled });
+  updateStatusUI(enabled);
 });
 
 
-// ── Mode select: auto / mute / speed ─────────────────────────
-modeEl.addEventListener('change', async () => {
-  const mode = modeEl.value;
-
-  await sendToBackground({ type: 'SET_SETTINGS', payload: { mode } });
-  await sendToContentScript({ type: 'SET_MODE', value: mode });
+// ── Mode Pills ────────────────────────────────────────────────
+pills.forEach(pill => {
+  pill.addEventListener('click', async () => {
+    const mode = pill.dataset.mode;
+    if (mode === currentMode) return;
+    currentMode = mode;
+    setActivePill(mode);
+    await sendToBackground({ type: 'SET_SETTINGS', payload: { mode } });
+    await sendToContentScript({ type: 'SET_MODE', value: mode });
+  });
 });
 
 
-// ── Helper: send a message to background.js ──────────────────
+// ── Open Spotify button ───────────────────────────────────────
+openSpotifyBtn.addEventListener('click', () => {
+  chrome.tabs.create({ url: 'https://open.spotify.com' });
+});
+
+
+// ── UI Helpers ────────────────────────────────────────────────
+function setActivePill(mode) {
+  pills.forEach(p => p.classList.toggle('active', p.dataset.mode === mode));
+  modeHint.textContent = MODE_HINTS[mode] ?? '';
+}
+
+function updateStatusUI(enabled) {
+  if (!enabled) {
+    statusCard.className = 'status-card disabled';
+    statusTitle.textContent = 'Paused';
+    statusSub.textContent   = 'Extension is disabled';
+    statusBadge.textContent = 'Off';
+    statusBadge.style.cssText = `
+      background: rgba(136,136,136,0.1);
+      color: var(--muted);
+      border-color: rgba(136,136,136,0.2);
+    `;
+  } else {
+    statusCard.className = 'status-card';
+    statusTitle.textContent = 'Ready';
+    statusSub.textContent   = 'Watching for ads…';
+    statusBadge.textContent = 'Active';
+    statusBadge.style.cssText = '';
+  }
+}
+
+function setAdActiveUI(active) {
+  if (!active) return;
+  statusCard.className    = 'status-card ad-active';
+  statusTitle.textContent = 'Ad Detected!';
+  statusSub.textContent   = 'Handling right now…';
+  statusBadge.textContent = 'Blocking';
+  statusBadge.style.cssText = `
+    background: rgba(241,94,94,0.12);
+    color: #f15e5e;
+    border-color: rgba(241,94,94,0.3);
+  `;
+}
+
+
+// ── Animated counter ──────────────────────────────────────────
+function animateCount(el, from, to) {
+  if (from === to) { el.textContent = to; return; }
+  const duration = 650;
+  const start    = performance.now();
+
+  const step = (now) => {
+    const t        = Math.min((now - start) / duration, 1);
+    const eased    = 1 - Math.pow(1 - t, 3);  // ease-out cubic
+    el.textContent = Math.round(from + (to - from) * eased);
+    if (t < 1) requestAnimationFrame(step);
+    else        el.classList.add('bump');
+  };
+
+  requestAnimationFrame(step);
+  el.addEventListener('animationend', () => el.classList.remove('bump'), { once: true });
+}
+
+
+// ── Messaging helpers ─────────────────────────────────────────
 function sendToBackground(message) {
   return new Promise((resolve) => {
     chrome.runtime.sendMessage(message, (response) => {
       if (chrome.runtime.lastError) {
-        console.warn('[Stupefy! popup] background error:', chrome.runtime.lastError.message);
+        console.warn('[Stupefy! popup] bg error:', chrome.runtime.lastError.message);
         resolve(null);
       } else {
         resolve(response);
@@ -74,22 +156,13 @@ function sendToBackground(message) {
   });
 }
 
-
-// ── Helper: send a message to content.js in the active tab ───
-// to reach a content script. We get the active tab's ID first.
 function sendToContentScript(message) {
   return new Promise((resolve) => {
     chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
       if (!tab) { resolve(null); return; }
-
       chrome.tabs.sendMessage(tab.id, message, (response) => {
-        if (chrome.runtime.lastError) {
-          // Content script might not be on a Spotify tab — that's fine
-          console.warn('[Stupefy! popup] content script error:', chrome.runtime.lastError.message);
-          resolve(null);
-        } else {
-          resolve(response);
-        }
+        if (chrome.runtime.lastError) { resolve(null); return; }
+        resolve(response);
       });
     });
   });
