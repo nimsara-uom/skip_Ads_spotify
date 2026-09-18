@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Unnecessary folders
+asip_Ads_spotify/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Packaging output
+*.zip
+releases/
