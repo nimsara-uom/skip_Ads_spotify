@@ -311,23 +311,29 @@ const UIOverlay = (() => {
     style.textContent = `
       #advanish-toast {
         position: fixed;
-        bottom: 100px;            /* Above Spotify's player bar */
+        bottom: 96px;
         left: 50%;
-        transform: translateX(-50%) translateY(20px);
-        background: #1e1e1e;
+        transform: translateX(-50%) translateY(18px);
+        background: rgba(14, 14, 14, 0.88);
         color: #ffffff;
-        border: 1px solid #1DB954;
-        border-radius: 999px;
-        padding: 10px 20px;
-        font-family: 'Circular', 'Helvetica', sans-serif;
-        font-size: 14px;
+        border: 1px solid rgba(30, 215, 96, 0.55);
+        border-radius: 100px;
+        padding: 10px 22px;
+        font-family: 'Circular', 'Inter', 'Helvetica', sans-serif;
+        font-size: 13px;
         font-weight: 500;
         z-index: 99999;
         opacity: 0;
-        transition: opacity 0.3s ease, transform 0.3s ease;
-        pointer-events: none;     /* Don't block clicks on Spotify's UI */
+        transition: opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+                    transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+        pointer-events: none;
         white-space: nowrap;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        box-shadow: 0 6px 28px rgba(0, 0, 0, 0.6),
+                    0 0 0 1px rgba(255,255,255,0.04),
+                    0 0 16px rgba(30, 215, 96, 0.12);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        letter-spacing: 0.1px;
       }
       #advanish-toast.visible {
         opacity: 1;
