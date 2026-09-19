@@ -126,47 +126,6 @@
         }));
         break;
 
-      case 'seek':
-        // Instant skip: jump to the very end of the ad.
-        // We mute during seek to prevent any audio blip.
-        let seeked = 0;
-        capturedMedia.forEach(el => {
-          try {
-            // Only seek if element has a valid, finite duration
-            if (el.duration && isFinite(el.duration) && el.duration > 0.5) {
-              el.muted = true;
-              el.currentTime = el.duration - 0.1;
-              seeked++;
-              log(`Seeked element to ${el.duration - 0.1}s / ${el.duration}s`);
-            }
-          } catch (err) {
-            log('Seek failed for element:', err.message);
-          }
-        });
-        window.dispatchEvent(new CustomEvent('__stupefy_status', {
-          detail: { ok: seeked > 0, action: 'seek', seeked, total: capturedMedia.size }
-        }));
-        // If seek worked, also start enforcer briefly to prevent Spotify
-        // from resetting currentTime back
-        if (seeked > 0) {
-          isSpedUp = true;
-          startEnforcer();
-          // Stop enforcer after 2s — ad should have ended by then
-          setTimeout(() => {
-            isSpedUp = false;
-            stopEnforcer();
-            capturedMedia.forEach(el => {
-              try {
-                el.playbackRate = 1;
-                el.defaultPlaybackRate = 1;
-                el.muted = false;
-              } catch (err) { }
-            });
-            log('Post-seek cleanup: enforcer stopped, elements restored');
-          }, 2000);
-        }
-        break;
-
       case 'revert':
         isSpedUp = false;
         stopEnforcer();

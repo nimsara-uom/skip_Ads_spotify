@@ -140,7 +140,6 @@ const ReactionModule = {
       }
       else {
         if (this.tryClickSkip()) { this._activeAction = 'skip'; succeeded = true; }
-        else if (this.trySeekViaInject()) { this._activeAction = 'inject-seek'; succeeded = true; }
         else if (this.trySpeedUpViaInject()) { this._activeAction = 'inject-speed'; succeeded = true; }
         else if (this.tryMuteViaInject()) { this._activeAction = 'inject-mute'; succeeded = true; }
         else if (this.tryMuteViaUI()) { this._activeAction = 'uimute'; succeeded = true; }
@@ -190,40 +189,6 @@ const ReactionModule = {
     return true;
   },
 
-
-  // ── Instant Seek: jump to end of the ad ─────────────────────
-  // This is the fastest possible skip — seeks to the last 0.1s
-  // of the ad, so Spotify thinks it played fully. Falls back to
-  // 16x speed-up if seeking fails or no elements are found.
-  trySeekViaInject() {
-    log('trySeekViaInject: sending seek command to inject.js...');
-
-    let seekWorked = false;
-    const handler = (e) => {
-      if (e.detail?.action === 'seek') {
-        seekWorked = e.detail.seeked > 0;
-        log(`trySeekViaInject: inject.js responded — ${e.detail.seeked}/${e.detail.total} elements seeked`);
-        if (!seekWorked) {
-          warn('trySeekViaInject: no elements could be seeked (duration unknown or 0 elements)');
-        }
-      }
-    };
-    window.addEventListener('__stupefy_status', handler, { once: true });
-
-    window.dispatchEvent(new CustomEvent('__stupefy_cmd', {
-      detail: { action: 'seek' }
-    }));
-
-    // Clean up listener after a short delay
-    setTimeout(() => window.removeEventListener('__stupefy_status', handler), 150);
-
-    // We always return true here because the event is dispatched.
-    // If it didn't actually seek, the ad-end detection will still
-    // notice the ad is playing and the next poll will retry with
-    // speed-up as fallback.
-    log('✅ trySeekViaInject: seek command dispatched');
-    return true;
-  },
 
   trySpeedUpViaInject() {
     log('trySpeedUpViaInject: sending speedup command to inject.js...');
@@ -313,15 +278,6 @@ const ReactionModule = {
     log(`Reverting action: ${this._activeAction}`);
 
     switch (this._activeAction) {
-      case 'inject-seek':
-        // Seek is a one-shot action, nothing to revert.
-        // But we send revert just in case inject.js muted during seek.
-        window.dispatchEvent(new CustomEvent('__stupefy_cmd', {
-          detail: { action: 'revert' }
-        }));
-        log('Reverted: sent revert after seek');
-        break;
-
       case 'inject-speed':
         window.dispatchEvent(new CustomEvent('__stupefy_cmd', {
           detail: { action: 'revert' }
