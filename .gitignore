@@ -12,3 +12,6 @@ Thumbs.db
 # Packaging output
 *.zip
 releases/
+
+# Agent configuration
+AGENTS.md
