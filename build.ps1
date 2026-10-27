@@ -4,7 +4,7 @@ $zipName = "stupefy-extension-v1.0.0.zip"
 $filesToInclude = @(
     "src",
     "icons",
-    "manifest.json",
+    "manifest.json",                                                                                                                                                                                                                                                                                                                                                                                                                                                                       
     "PRIVACY_POLICY.html"
 )
 

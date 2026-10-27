@@ -2,11 +2,12 @@
 
 
 const CONFIG = {
-  POLL_INTERVAL_MS: 800,
+  POLL_INTERVAL_MS: 2000,   // Safety-net poll (observer handles fast detection)
   SPEED_RATE: 16,
   REACTION_DELAY_MS: 500,   // Delay before reacting (lets DOM settle)
-  RELOAD_COOLDOWN: 5000,  // Min ms between reloads (prevents infinite loop)
+  RELOAD_COOLDOWN: 5000,    // Min ms between reloads (prevents infinite loop)
   LOG_PREFIX: '[Stupefy!]',
+  OBSERVER_TARGET_SELECTOR: '[data-testid="now-playing-bar"], [data-testid="now-playing-widget"], footer',
 };
 const DEBUG = false;
 const log = (...args) => DEBUG && console.log(CONFIG.LOG_PREFIX, ...args);
@@ -73,25 +74,41 @@ function isAdText(text) {
 
 const DetectionModule = {
 
+  // Cached DOM references — avoids querying the entire document every check.
+  // Spotify's SPA may swap these out, so we re-query on cache miss.
+  _cachedWidget: null,
+  _cachedSubtitle: null,
+  _cacheExpiry: 0,
+  _CACHE_TTL: 3000, // Re-query elements every 3s at most
+
+  _refreshCache() {
+    const now = Date.now();
+    if (now < this._cacheExpiry) return;
+    this._cacheExpiry = now + this._CACHE_TTL;
+    this._cachedWidget = document.querySelector('[data-testid="now-playing-widget"]');
+    this._cachedSubtitle = document.querySelector('[data-testid="context-item-info-subtitles"]');
+  },
+
   detectAd() {
+    this._refreshCache();
+
     // Signal 1: aria-label (most stable, now i18n-aware)
-    const widget = document.querySelector('[data-testid="now-playing-widget"]');
-    if (isAdText(widget?.getAttribute('aria-label'))) {
+    if (isAdText(this._cachedWidget?.getAttribute('aria-label'))) {
       return true;
     }
 
     // Signal 2: subtitle text (i18n-aware)
-    const subtitle = document.querySelector('[data-testid="context-item-info-subtitles"]');
-    if (isAdText(subtitle?.textContent)) {
+    if (isAdText(this._cachedSubtitle?.textContent)) {
       return true;
     }
 
-    // Signal 3: page title (i18n-aware, least reliable)
+    // Signal 3: page title (i18n-aware, least reliable — zero DOM cost)
     if (isAdText(document.title)) {
       return true;
     }
 
     // Signal 4: Spotify sometimes adds a special ad container
+    // (only run this heavier query if the cheap checks above missed)
     const adSlot = document.querySelector('[data-testid="ad-slot"], [class*="ad-slot"]');
     if (adSlot) {
       return true;
@@ -458,7 +475,7 @@ const onDomChange = debounce(function () {
     log('🟢 Ad ENDED');
     onAdEnd();
   }
-}, 200);
+}, 400);  // 400ms debounce — coalesces Spotify's rapid React re-renders
 
 
 // ── Persisted settings from chrome.storage ────────────────────
@@ -473,12 +490,36 @@ const state = {
 
 function startObserver() {
   const observer = new MutationObserver(onDomChange);
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true,
-    attributes: true,
-    attributeFilter: ['aria-label', 'aria-disabled'],
-  });
+
+  // Try to scope the observer to just the now-playing bar area.
+  // This dramatically reduces mutation noise from the rest of Spotify's
+  // React tree (playlist renders, search results, animated covers, etc.)
+  let target = null;
+  for (const sel of CONFIG.OBSERVER_TARGET_SELECTOR.split(', ')) {
+    target = document.querySelector(sel);
+    if (target) break;
+  }
+
+  if (!target) {
+    // Fallback: observe body, but ONLY attribute changes (skip childList
+    // noise from React renders). The poll timer still catches everything.
+    log('Observer: now-playing bar not found yet, using body (attributes only)');
+    target = document.body;
+    observer.observe(target, {
+      attributes: true,
+      subtree: true,
+      attributeFilter: ['aria-label', 'aria-disabled'],
+    });
+  } else {
+    log('Observer: scoped to', target.tagName || target.dataset?.testid);
+    observer.observe(target, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['aria-label', 'aria-disabled'],
+    });
+  }
+
   log('MutationObserver active');
   return observer;
 }
